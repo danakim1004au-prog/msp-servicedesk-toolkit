@@ -1,0 +1,22 @@
+=== TICKET NOTE — AD account support — John Smith ===
+Date:        06/07/2026 23:31
+Client:      Acme Conveyancing Pty Ltd
+Technician:  dayoungkim
+Status:      Resolved
+Time spent:  10 min
+
+ISSUE
+  Account assistance for jsmith (John Smith).
+TROUBLESHOOTING STEPS
+  1. Enabled: True
+  2. Locked out: True
+  3. Password last set: 12/06/2026 08:41
+  4. Lockout source: JSMITH-IPHONE at 02/07/2026 08:07 — check that device for a stale saved password (Wi-Fi, mapped drive, phone email).
+  5. Unlocked the account
+  6. Reset password and set must-change-at-next-logon
+RESOLUTION
+  Unlocked the account; Reset password and set must-change-at-next-logon
+NEXT STEPS
+  - Hand the temp password to the user out-of-band (phone/password manager) — NOT by email
+  - Have them clear saved passwords on the device that caused the lockout
+

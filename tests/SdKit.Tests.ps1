@@ -20,7 +20,7 @@ Describe 'Module manifest' {
         $manifest.Name | Should -Be 'SdKit'
     }
 
-    It 'exports exactly the ten public commands' {
+    It 'exports exactly the eleven public commands' {
         $exported = (Get-Module SdKit).ExportedFunctions.Keys | Sort-Object
         $exported | Should -Be @(
             'Disable-SdClientUser'
@@ -31,6 +31,7 @@ Describe 'Module manifest' {
             'New-SdClientUser'
             'New-SdComputerName'
             'New-SdTicketNote'
+            'Reset-SdAdAccount'
             'Test-SdEssentialEight'
             'Test-SdNetworkStack'
         )
@@ -196,6 +197,14 @@ Describe 'Format-SdTriageNote (private)' {
             $note | Should -Match '14x  disk \[System\]'
             $note | Should -Match 'Reception-MFP'
         }
+    }
+}
+
+Describe 'Reset-SdAdAccount' {
+    It 'fails with an RSAT install hint when the ActiveDirectory module is absent' -Skip:([bool](Get-Module -ListAvailable -Name ActiveDirectory)) {
+        # On a box without RSAT (macOS/Linux CI), the AD guard should give a
+        # human answer, not a bare "term not recognised".
+        { Reset-SdAdAccount -Identity jsmith -Unlock } | Should -Throw '*RSAT*'
     }
 }
 

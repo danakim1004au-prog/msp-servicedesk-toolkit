@@ -11,7 +11,7 @@
     Author            = 'Dana Kim'
     CompanyName       = 'Dana Kim (portfolio project)'
     Copyright         = '(c) 2026 Dana Kim. Licensed under the MIT licence.'
-    Description       = 'Service desk toolkit for MSP techs: workstation triage, layered network diagnostics, standardised PSA ticket notes, Microsoft 365 user snapshots, onboarding/offboarding, SOE PC run-ups and an ACSC Essential Eight quick check.'
+    Description       = 'Service desk toolkit for MSP techs: workstation triage, layered network diagnostics, standardised PSA ticket notes, on-prem Active Directory unlock/reset, Microsoft 365 user snapshots, onboarding/offboarding, SOE PC run-ups and an ACSC Essential Eight quick check.'
     PowerShellVersion = '5.1'
 
     # Only the polished, tech-facing commands are exported. Helpers such as
@@ -20,6 +20,7 @@
         'Invoke-SdTriage'
         'Test-SdNetworkStack'
         'New-SdTicketNote'
+        'Reset-SdAdAccount'
         'Get-SdUserSnapshot'
         'New-SdClientUser'
         'Disable-SdClientUser'
@@ -34,7 +35,7 @@
 
     PrivateData       = @{
         PSData = @{
-            Tags         = @('MSP', 'ServiceDesk', 'HelpDesk', 'Microsoft365', 'Intune', 'EssentialEight', 'Australia')
+            Tags         = @('MSP', 'ServiceDesk', 'HelpDesk', 'Microsoft365', 'Intune', 'ActiveDirectory', 'EssentialEight', 'Australia')
             LicenseUri   = 'https://opensource.org/licenses/MIT'
             ReleaseNotes = 'Initial release: triage, network stack tests, ticket notes, M365 user lifecycle, PC run-ups, Essential Eight quick check.'
         }
