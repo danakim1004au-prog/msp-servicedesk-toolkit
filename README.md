@@ -12,7 +12,7 @@ config (not in scripts), and anything that changes a tenant or a machine
 supports `-WhatIf`.
 
 > Portfolio project by Dana Kim. The sample clients are fictional; the
-> workflows are the real ones an Australian MSP desk runs every day.
+> workflows reflect the real tasks MSP service desks handle every day
 
 ## Job match: Service Desk Officer / MSP L1–L2
 
@@ -91,6 +91,8 @@ Copy-Item ./config/runup-baseline.sample.json ./config/runup-baseline.json
 identifiers never land in the repo.
 
 ## Layout
+<img width="1698" height="926" alt="msp-servicedesk-toolkit_layout" src="https://github.com/user-attachments/assets/c2a9967c-152a-43b0-b5e5-693b09fac919" />
+
 
 ```
 SdKit/                  PowerShell module
