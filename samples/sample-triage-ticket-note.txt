@@ -1,0 +1,33 @@
+=== WORKSTATION TRIAGE — ACME-LT-2345XY ===
+Captured:      01/07/2026 09:15
+Client:        Acme Conveyancing Pty Ltd
+Contact:       Sarah M (reception)
+
+SYSTEM
+  Model:         HP EliteBook 840 G9
+  Serial:        5CG12345XY
+  OS:            Microsoft Windows 11 Pro (build 26100)
+  Uptime:        21d 4h 2m  << consider a restart
+  RAM:           16 GB
+  Pending reboot: True
+  Last OS patch: KB5041585 on 12/06/2026
+
+DISKS
+  C:  21.5 GB free of 476 GB (5%)  << LOW SPACE
+
+RECENT EVENT LOG ERRORS (last 24h)
+  14x  disk [System]
+  3x  Application Error [Application]
+
+PRINTERS
+  Reception-MFP — Normal
+  Settlements-Laser — Offline
+
+NETWORK QUICK CHECK
+  [PASS] Network adapter up — Wi-Fi
+  [PASS] IP address (DHCP) — IP 192.168.10.57, gateway 192.168.10.1
+  [PASS] External DNS (www.microsoft.com) — 23.62.230.91
+  [PASS] HTTPS egress (443) — www.microsoft.com:443 reachable
+
+--- End of automated triage. Add troubleshooting notes below. ---
+

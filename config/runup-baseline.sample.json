@@ -1,0 +1,28 @@
+{
+  "_comment": "SOE baseline for workshop PC run-ups. Copy to runup-baseline.json and keep the soeVersion current — the version lands on every run-up report so QA can tell which standard a machine was built to.",
+  "soeVersion": "2026.06",
+  "timezone": "Cen. Australia Standard Time",
+  "powerPlan": "Balanced",
+  "wingetApps": [
+    "Google.Chrome",
+    "Adobe.Acrobat.Reader.64-bit",
+    "7zip.7zip",
+    "Microsoft.Teams",
+    "Zoom.Zoom"
+  ],
+  "removeAppx": [
+    "Microsoft.XboxApp",
+    "Microsoft.ZuneMusic",
+    "Microsoft.BingNews",
+    "Microsoft.MicrosoftSolitaireCollection",
+    "king.com.CandyCrushSaga"
+  ],
+  "windowsSettings": {
+    "showFileExtensions": true
+  },
+  "checks": {
+    "requireTpm": true,
+    "requireBitLocker": true,
+    "minDiskFreeGb": 40
+  }
+}

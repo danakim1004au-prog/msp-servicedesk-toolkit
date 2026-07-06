@@ -1,0 +1,16 @@
+# Real client config never lands in the repo — only the *.sample.json files
+# are committed. This is the whole point of the config/code split.
+config/clients.json
+config/runup-baseline.json
+
+# Run-up reports carry client names and serials
+reports/
+runup-*.md
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+*.swp

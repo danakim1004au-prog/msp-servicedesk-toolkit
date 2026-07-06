@@ -1,0 +1,31 @@
+{
+  "_comment": "Sample client register. Copy to clients.json (git-ignored) and fill in real clients. One entry per managed client — this is where client-specific conventions live so the scripts stay generic.",
+  "clients": [
+    {
+      "code": "ACME",
+      "name": "Acme Conveyancing Pty Ltd",
+      "domain": "acmeconvey.com.au",
+      "tenantId": "00000000-0000-0000-0000-000000000000",
+      "upnPattern": "{first}.{last}",
+      "computerNamePattern": "{code}-{type}-{serial}",
+      "timezone": "Cen. Australia Standard Time",
+      "defaultLicenceSku": "O365_BUSINESS_PREMIUM",
+      "defaultGroups": ["All Staff", "SG-Intune-Standard-Users"],
+      "escalationContact": "Practice manager (see PSA site record for current details)",
+      "notes": "Conveyancing firm — settlement days are Tuesday/Friday, avoid maintenance then."
+    },
+    {
+      "code": "BLU",
+      "name": "Bluegum Physio Group",
+      "domain": "bluegumphysio.com.au",
+      "tenantId": "00000000-0000-0000-0000-000000000000",
+      "upnPattern": "{first}{last}",
+      "computerNamePattern": "{code}-{type}-{serial}",
+      "timezone": "Cen. Australia Standard Time",
+      "defaultLicenceSku": "SPB",
+      "defaultGroups": ["BLU All Users"],
+      "escalationContact": "Clinic owner (see PSA site record)",
+      "notes": "Three sites; practice management app is cloud-hosted, check their vendor status page before deep-diving 'app is slow' tickets."
+    }
+  ]
+}
