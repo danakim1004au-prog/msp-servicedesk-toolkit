@@ -23,15 +23,16 @@ something concrete in this repo:
 | Role requirement | Where it's demonstrated |
 |---|---|
 | **L1/L2 troubleshooting** (desktops, laptops, printers, peripherals) | [`Invoke-SdTriage`](SdKit/Public/Invoke-SdTriage.ps1) — hardware, disk, reboot, event-log and printer snapshot |
-| **Microsoft 365 admin** (Exchange Online, SharePoint, Teams, Entra ID, Intune) | [`Get-SdUserSnapshot`](SdKit/Public/Get-SdUserSnapshot.ps1), [`New-SdClientUser`](SdKit/Public/New-SdClientUser.ps1), [`Disable-SdClientUser`](SdKit/Public/Disable-SdClientUser.ps1) + [SharePoint/Teams runbook](docs/runbook-sharepoint-teams.md) |
+| **Microsoft 365 admin** (Exchange Online, SharePoint, Teams, Entra ID, Intune) | [`Get-SdUserSnapshot`](SdKit/Public/Get-SdUserSnapshot.ps1) surfaces a user's licences, group memberships and **Intune-enrolled devices (desktop and mobile)** in one snapshot, plus [`New-SdClientUser`](SdKit/Public/New-SdClientUser.ps1) / [`Disable-SdClientUser`](SdKit/Public/Disable-SdClientUser.ps1) + [SharePoint/Teams runbook](docs/runbook-sharepoint-teams.md) |
 | **Windows Server, Active Directory** | [`Reset-SdAdAccount`](SdKit/Public/Reset-SdAdAccount.ps1) (unlock/reset + lockout-source lookup) + [AD support runbook](docs/runbook-ad-support.md) (domain join, secure channel, GPO, mapped drives) |
 | **Basic networking** (DNS, DHCP, VPNs, switches, firewalls) | [`Test-SdNetworkStack`](SdKit/Public/Test-SdNetworkStack.ps1) 7-layer ladder + [server-side DNS/DHCP checklist](docs/runbook-ad-support.md#server-side-dns--dhcp-checklist) |
-| **Building, imaging, configuring, deploying PCs** (run-ups, SOE) | [`Invoke-SdPcRunUp`](SdKit/Public/Invoke-SdPcRunUp.ps1) + [run-up runbook](docs/runbook-pc-runup.md) |
+| **PC deployment & asset onboarding** (build, image, configure, deploy) | [`Invoke-SdPcRunUp`](SdKit/Public/Invoke-SdPcRunUp.ps1) + [run-up runbook](docs/runbook-pc-runup.md) — the SOE build report (serial, hostname, spec, outstanding items) doubles as the machine's asset-register onboarding record |
 | **Documentation in a PSA/ticketing system** | Every command's `-AsTicketNote`; [ticket-note standards](docs/ticket-note-standards.md) + [PSA integration](docs/psa-integration.md) (ConnectWise / Autotask / NinjaOne / Syncro) |
 | **Escalating to senior engineers** | [`New-SdTicketNote -Escalation`](SdKit/Public/New-SdTicketNote.ps1) handover format + [escalation guide](docs/escalation-guide.md) |
 | **Translating tech-speak into plain English** | `PlainEnglish` field on every network check, written to read down the phone |
 | **ACSC Essential Eight & SMB security** *(highly regarded)* | [`Test-SdEssentialEight`](SdKit/Public/Test-SdEssentialEight.ps1) |
 | **IT project coordination** *(highly regarded)* | Onboarding/offboarding/run-up runbooks with pre-flight and close-out checklists |
+| **Basic networking** (TCP/IP, DNS, DHCP, VPNs, switches, firewalls) | [`Test-SdNetworkStack`](SdKit/Public/Test-SdNetworkStack.ps1) — a layered TCP/IP diagnostic ladder (link → IP → gateway → DNS → DHCP lease → VPN tunnel → application reachability) + [server-side DNS/DHCP checklist](docs/runbook-ad-support.md#server-side-dns--dhcp-checklist) |
 
 ## Example outputs
 
@@ -129,6 +130,8 @@ tests/                  Pester 5 suite (21 tests) for the cross-platform logic
 - **Honest checks.** The Essential Eight sweep marks tenant-level
   strategies as ManualCheck rather than pretending a registry read
   settles MFA or backups.
+- **Work leaves a record.** The run-up report is structured so it can seed
+  an asset register — one build, one onboarding row, no re-keying.
 
 ## Testing
 
@@ -156,3 +159,14 @@ the Windows-only collectors are exercised on a bench machine or lab VM.
 ## Licence
 
 MIT — see [LICENSE](LICENSE).
+
+## Roadmap
+
+- **Asset register export** — emit run-up and triage results as a CSV/JSON
+  asset feed for ITSM/CMDB import. Today the run-up report is the source
+  record; automated register sync is the next step.
+- **Endpoint protection & backup-status checks** — surface AV/EDR state and
+  last-good backup alongside the Essential Eight quick check (currently
+  flagged `ManualCheck`).
+- **Mobile device coverage** — extend `Get-SdUserSnapshot` to list a user's
+  Intune-enrolled devices (desktop and mobile) in one view.
