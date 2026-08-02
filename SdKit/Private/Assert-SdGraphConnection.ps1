@@ -1,4 +1,4 @@
-function Assert-SdGraphConnection {
+﻿function Assert-SdGraphConnection {
     <#
     .SYNOPSIS
         Shared guard for every command that talks to Microsoft Graph.

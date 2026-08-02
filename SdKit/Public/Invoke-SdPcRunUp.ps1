@@ -1,4 +1,4 @@
-function Invoke-SdPcRunUp {
+﻿function Invoke-SdPcRunUp {
     <#
     .SYNOPSIS
         Workshop PC run-up: applies the SOE baseline and produces a QA report.
@@ -60,16 +60,16 @@ function Invoke-SdPcRunUp {
     $addStep = {
         param ($Name, $Status, $Detail)
         $steps.Add([pscustomobject]@{ Step = $Name; Status = $Status; Detail = $Detail })
-        $colour = switch ($Status) {
-            'Done'   { 'Green' }
-            'Failed' { 'Red' }
-            'Manual' { 'Yellow' }
-            default  { 'Gray' }
-        }
-        Write-Host ('  [{0}] {1} — {2}' -f $Status.ToUpper(), $Name, $Detail) -ForegroundColor $colour
+        Write-Information ('  [{0}] {1} - {2}' -f $Status.ToUpper(), $Name, $Detail) -InformationAction Continue
     }
 
-    Write-Host "Starting run-up for $($client.name) ($DeviceType) against SOE $($baseline.soeVersion)..." -ForegroundColor Cyan
+    $escapeMarkdown = {
+        param ($Value)
+        if ($null -eq $Value) { return '' }
+        return ([string]$Value -replace '\\', '\\' -replace '\|', '\|' -replace '[\r\n]+', ' ')
+    }
+
+    Write-Information "Starting run-up for $($client.name) ($DeviceType) against SOE $($baseline.soeVersion)..." -InformationAction Continue
 
     # --- Computer name -------------------------------------------------------
     $serial = (Get-CimInstance -ClassName Win32_BIOS).SerialNumber
@@ -86,6 +86,9 @@ function Invoke-SdPcRunUp {
             & $addStep 'Computer name' 'Failed' $_.Exception.Message
         }
     }
+    else {
+        & $addStep 'Computer name' 'WouldChange' "Would rename to $newName (restart required)"
+    }
 
     # --- Time zone --------------------------------------------------------------
     $tz = if ($client.timezone) { $client.timezone } else { $baseline.timezone }
@@ -97,6 +100,9 @@ function Invoke-SdPcRunUp {
         catch {
             & $addStep 'Time zone' 'Failed' $_.Exception.Message
         }
+    }
+    elseif ($tz) {
+        & $addStep 'Time zone' 'WouldChange' "Would set time zone to $tz"
     }
 
     # --- Power plan ---------------------------------------------------------------
@@ -116,6 +122,9 @@ function Invoke-SdPcRunUp {
             else {
                 & $addStep 'Power plan' 'Failed' "powercfg exited with code $LASTEXITCODE"
             }
+        }
+        else {
+            & $addStep 'Power plan' 'WouldChange' "Would set power plan to $planName"
         }
     }
     else {
@@ -144,6 +153,9 @@ function Invoke-SdPcRunUp {
                     & $addStep "App: $appId" 'Failed' "winget exit code $LASTEXITCODE — install manually"
                 }
             }
+            else {
+                & $addStep "App: $appId" 'WouldChange' 'Would install via winget'
+            }
         }
     }
 
@@ -163,6 +175,9 @@ function Invoke-SdPcRunUp {
                 & $addStep "Debloat: $appx" 'Failed' $_.Exception.Message
             }
         }
+        else {
+            & $addStep "Debloat: $appx" 'WouldChange' 'Would remove the Appx package'
+        }
     }
 
     # --- Sensible defaults ------------------------------------------------------------
@@ -176,6 +191,9 @@ function Invoke-SdPcRunUp {
         catch {
             & $addStep 'Show file extensions' 'Failed' $_.Exception.Message
         }
+    }
+    elseif ($baseline.windowsSettings.showFileExtensions) {
+        & $addStep 'Show file extensions' 'WouldChange' 'Would show file extensions for the current user'
     }
 
     # --- QA checks (read-only) ----------------------------------------------------------
@@ -222,19 +240,28 @@ function Invoke-SdPcRunUp {
     }
 
     # --- Report ------------------------------------------------------------------------
-    $reportFile = Join-Path $ReportPath ('runup-{0}-{1}.md' -f $newName, (Get-Date -Format 'yyyyMMdd-HHmm'))
+    if (-not (Test-Path -Path $ReportPath -PathType Container)) {
+        if ($PSCmdlet.ShouldProcess($ReportPath, 'Create report directory')) {
+            New-Item -Path $ReportPath -ItemType Directory -Force -ErrorAction Stop | Out-Null
+        }
+    }
+
+    $reportFile = Join-Path $ReportPath ('runup-{0}-{1}.md' -f $newName, (Get-Date -Format 'yyyyMMdd-HHmmss'))
     $manualCount = @($steps | Where-Object Status -eq 'Manual').Count
     $failedCount = @($steps | Where-Object Status -eq 'Failed').Count
 
     $sb = [System.Text.StringBuilder]::new()
-    [void]$sb.AppendLine("# PC Run-Up Report — $newName")
+    $reportClient = & $escapeMarkdown $client.name
+    $reportName = & $escapeMarkdown $newName
+    $reportSerial = & $escapeMarkdown $serial
+    [void]$sb.AppendLine("# PC Run-Up Report - $reportName")
     [void]$sb.AppendLine()
     [void]$sb.AppendLine("| | |")
     [void]$sb.AppendLine("|---|---|")
-    [void]$sb.AppendLine("| Client | $($client.name) |")
-    [void]$sb.AppendLine("| SOE version | $($baseline.soeVersion) |")
-    [void]$sb.AppendLine("| Device type | $DeviceType |")
-    [void]$sb.AppendLine("| Serial | $serial |")
+    [void]$sb.AppendLine("| Client | $reportClient |")
+    [void]$sb.AppendLine("| SOE version | $(& $escapeMarkdown $baseline.soeVersion) |")
+    [void]$sb.AppendLine("| Device type | $(& $escapeMarkdown $DeviceType) |")
+    [void]$sb.AppendLine("| Serial | $reportSerial |")
     [void]$sb.AppendLine("| Technician | $([System.Environment]::UserName) |")
     [void]$sb.AppendLine("| Date | $(Get-Date -Format $script:SdDateFormat) |")
     [void]$sb.AppendLine()
@@ -243,14 +270,18 @@ function Invoke-SdPcRunUp {
     [void]$sb.AppendLine('| Step | Status | Detail |')
     [void]$sb.AppendLine('|---|---|---|')
     foreach ($step in $steps) {
-        [void]$sb.AppendLine(('| {0} | {1} | {2} |' -f $step.Step, $step.Status, $step.Detail))
+        [void]$sb.AppendLine(('| {0} | {1} | {2} |' -f `
+            (& $escapeMarkdown $step.Step),
+            (& $escapeMarkdown $step.Status),
+            (& $escapeMarkdown $step.Detail)))
     }
     [void]$sb.AppendLine()
-    [void]$sb.AppendLine("**Outstanding before shipping:** $manualCount manual step(s), $failedCount failed step(s).")
+    $wouldChangeCount = @($steps | Where-Object Status -eq 'WouldChange').Count
+    [void]$sb.AppendLine("**Outstanding before shipping:** $manualCount manual step(s), $failedCount failed step(s), $wouldChangeCount planned change(s).")
 
     if ($PSCmdlet.ShouldProcess($reportFile, 'Write run-up report')) {
         Set-Content -Path $reportFile -Value $sb.ToString() -Encoding UTF8
-        Write-Host "`nRun-up report saved to $reportFile" -ForegroundColor Cyan
+        Write-Information "Run-up report saved to $reportFile" -InformationAction Continue
     }
 
     [pscustomobject]@{

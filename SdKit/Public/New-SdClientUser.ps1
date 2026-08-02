@@ -1,4 +1,4 @@
-function New-SdClientUser {
+﻿function New-SdClientUser {
     <#
     .SYNOPSIS
         Onboards a new starter for a managed client — the standard way, every time.
@@ -86,7 +86,7 @@ function New-SdClientUser {
         $actions.Add("Created Entra ID user $upn (must change password at first sign-in)")
     }
     else {
-        Write-Host "WhatIf: would create user '$displayName' as $upn" -ForegroundColor Cyan
+        Write-Information "WhatIf: would create user '$displayName' as $upn" -InformationAction Continue
         $newUser = $null
     }
 
@@ -135,7 +135,7 @@ function New-SdClientUser {
     }
 
     if (-not $newUser) {
-        Write-Host 'WhatIf run complete — nothing was changed in the tenant.' -ForegroundColor Cyan
+        Write-Information 'WhatIf run complete. Nothing was changed in the tenant.' -InformationAction Continue
         return
     }
 

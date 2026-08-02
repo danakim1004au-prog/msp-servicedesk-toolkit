@@ -1,4 +1,4 @@
-function Assert-SdAdModule {
+﻿function Assert-SdAdModule {
     <#
     .SYNOPSIS
         Shared guard for every command that talks to on-premises Active Directory.

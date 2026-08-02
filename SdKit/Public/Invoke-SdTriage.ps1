@@ -1,4 +1,4 @@
-function Invoke-SdTriage {
+﻿function Invoke-SdTriage {
     <#
     .SYNOPSIS
         One-command workstation triage for "my computer is slow/broken" tickets.

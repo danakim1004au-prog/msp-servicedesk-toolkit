@@ -1,4 +1,4 @@
-function New-SdComputerName {
+﻿function New-SdComputerName {
     <#
     .SYNOPSIS
         Builds a compliant computer name from a client's naming pattern.
@@ -35,6 +35,18 @@ function New-SdComputerName {
         [string]$Serial
     )
 
+    if ([string]::IsNullOrWhiteSpace($Serial)) {
+        throw 'Serial must contain at least one character.'
+    }
+
+    $unknownTokens = [regex]::Matches($Pattern, '\{([^}]+)\}') |
+        ForEach-Object { $_.Groups[1].Value } |
+        Where-Object { $_ -notin @('code', 'type', 'serial') } |
+        Select-Object -Unique
+    if ($unknownTokens) {
+        throw "Pattern contains unsupported token(s): $($unknownTokens -join ', '). Use {code}, {type} and {serial}."
+    }
+
     # Serials often carry spaces or symbols the OS won't accept in a name.
     $cleanSerial = ($Serial -replace '[^A-Za-z0-9]', '')
 
@@ -66,6 +78,10 @@ function New-SdComputerName {
             $name = $name.Substring(0, 15)
             Write-Warning "Pattern produced a name over 15 characters even with a trimmed serial — hard-truncated to '$name'. Check the client's naming convention."
         }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($name)) {
+        throw 'Pattern and supplied values produced an empty computer name.'
     }
 
     return $name

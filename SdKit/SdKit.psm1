@@ -1,4 +1,4 @@
-# =====================================================================
+﻿# =====================================================================
 #  SdKit — module loader
 #  Dot-sources every function under Public/ and Private/, then exports
 #  only the public ones. Keeps each command in its own file so changes

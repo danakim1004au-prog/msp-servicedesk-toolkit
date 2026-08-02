@@ -24,7 +24,7 @@ Connect-ExchangeOnline   # needed for the mailbox conversion step
 
 Import-Module ./SdKit/SdKit.psd1
 
-$result = Disable-SdClientUser -UserPrincipalName sarah.m@acmeconvey.com.au `
+$result = Disable-SdClientUser -UserPrincipalName sarah.m@acme.example.com.au `
     -Client 'Acme Conveyancing' -RequestedBy 'J. Smith (Practice Manager)' `
     -ConvertMailboxToShared -Confirm
 

@@ -1,16 +1,17 @@
-# Real client config never lands in the repo — only the *.sample.json files
-# are committed. This is the whole point of the config/code split.
+# Real client configuration stays local. Commit only the sample files.
 config/clients.json
 config/runup-baseline.json
 
-# Run-up reports carry client names and serials
+# Reports may contain client names, serial numbers and workstation details.
 reports/
 runup-*.md
 
-# OS noise
+# Test output can contain local usernames, paths and machine names.
+testResults.xml
+TestResults/
+
+# Operating system and editor files.
 .DS_Store
 Thumbs.db
-
-# Editor
 .vscode/
 *.swp

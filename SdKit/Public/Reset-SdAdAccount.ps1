@@ -1,4 +1,4 @@
-function Reset-SdAdAccount {
+﻿function Reset-SdAdAccount {
     <#
     .SYNOPSIS
         The bread-and-butter AD ticket: unlock and/or reset an on-prem account.
@@ -75,19 +75,20 @@ function Reset-SdAdAccount {
                 $pdc = (Get-ADDomain -ErrorAction Stop).PDCEmulator
                 # Event 4740 on the PDC emulator carries the caller computer
                 # in the account-lockout audit record.
-                $event = Get-WinEvent -ComputerName $pdc -FilterHashtable @{
+                $lockoutEvent = Get-WinEvent -ComputerName $pdc -FilterHashtable @{
                     LogName = 'Security'; Id = 4740
                 } -MaxEvents 25 -ErrorAction Stop |
                     Where-Object { $_.Properties[0].Value -eq $user.SamAccountName } |
                     Select-Object -First 1
-                if ($event) {
-                    $source = $event.Properties[1].Value
-                    $findings.Add("Lockout source: '$source' at $($event.TimeCreated.ToString($script:SdDateFormat)) — check that device for a stale saved password (Wi-Fi, mapped drive, phone email).")
+                if ($lockoutEvent) {
+                    $source = $lockoutEvent.Properties[1].Value
+                    $findings.Add("Lockout source: '$source' at $($lockoutEvent.TimeCreated.ToString($script:SdDateFormat)) - check that device for a stale saved password (Wi-Fi, mapped drive, phone email).")
                 }
             }
             catch {
                 # Not fatal — the unlock still works, we just can't say why.
-                $findings.Add("Lockout source lookup unavailable (needs Security log access on PDC $($pdc)): $($_.Exception.Message)")
+                $pdcLabel = if ($pdc) { $pdc } else { 'the PDC emulator' }
+                $findings.Add("Lockout source lookup unavailable (needs Security log access on PDC $pdcLabel): $($_.Exception.Message)")
             }
         }
 
@@ -107,7 +108,11 @@ function Reset-SdAdAccount {
         if ($ResetPassword) {
             if ($PSCmdlet.ShouldProcess($user.SamAccountName, 'Reset password and force change at next logon')) {
                 $tempPassword = New-SdTempPassword
-                $secure = ConvertTo-SecureString -String $tempPassword -AsPlainText -Force
+                $secure = New-Object System.Security.SecureString
+                foreach ($character in $tempPassword.ToCharArray()) {
+                    $secure.AppendChar($character)
+                }
+                $secure.MakeReadOnly()
                 Set-ADAccountPassword -Identity $user.SamAccountName -NewPassword $secure -Reset -ErrorAction Stop
                 Set-ADUser -Identity $user.SamAccountName -ChangePasswordAtLogon $true -ErrorAction Stop
                 $actions.Add('Reset password and set must-change-at-next-logon')
@@ -115,7 +120,7 @@ function Reset-SdAdAccount {
         }
 
         if ($actions.Count -eq 0 -and $WhatIfPreference) {
-            Write-Host 'WhatIf run complete — nothing was changed in AD.' -ForegroundColor Cyan
+            Write-Information 'WhatIf run complete. Nothing was changed in AD.' -InformationAction Continue
             return
         }
 

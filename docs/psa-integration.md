@@ -38,8 +38,8 @@ A "can't sign in" call, ConnectWise-style, start to finish:
 Import-Module ./SdKit/SdKit.psd1
 
 # 1. Pull the facts while the client is on the phone (read-only).
-Connect-MgGraph -Scopes 'User.Read.All','UserAuthenticationMethod.Read.All','Directory.Read.All'
-$snapshot = Get-SdUserSnapshot -UserPrincipalName jsmith@acmeconvey.com.au -AsTicketNote
+Connect-MgGraph -Scopes 'User.Read.All','UserAuthenticationMethod.Read.All','Directory.Read.All','DeviceManagementManagedDevices.Read.All','AuditLog.Read.All'
+$snapshot = Get-SdUserSnapshot -UserPrincipalName jsmith@acme.example.com.au -AsTicketNote
 
 # 2. It's an on-prem AD lockout — unlock, reset, find the source.
 $fix = Reset-SdAdAccount -Identity jsmith -Unlock -ResetPassword -Client 'Acme Conveyancing'

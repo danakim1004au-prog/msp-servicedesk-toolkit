@@ -1,4 +1,4 @@
-# =====================================================================
+﻿# =====================================================================
 #  SdKit — MSP Service Desk Toolkit (module manifest)
 #  A day-one toolkit for Level 1 / Level 2 service desk work at a
 #  managed services provider: triage, ticket notes, M365 user admin,

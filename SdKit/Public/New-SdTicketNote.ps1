@@ -1,4 +1,4 @@
-function New-SdTicketNote {
+﻿function New-SdTicketNote {
     <#
     .SYNOPSIS
         Builds a standardised, PSA-ready ticket note.

@@ -1,4 +1,4 @@
-function Test-SdEssentialEight {
+﻿function Test-SdEssentialEight {
     <#
     .SYNOPSIS
         Quick workstation sanity check against the ACSC Essential Eight.

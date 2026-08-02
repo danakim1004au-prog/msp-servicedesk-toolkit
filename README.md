@@ -1,156 +1,154 @@
-# SdKit — MSP Service Desk Toolkit
+# SdKit
 
-A PowerShell toolkit for the day-to-day work of a Level 1/2 service desk
-at a managed services provider: workstation triage, layered network
-diagnostics, standardised ticket notes, on-prem Active Directory
-unlock/reset, Microsoft 365 user lifecycle, workshop PC run-ups and an
-ACSC Essential Eight quick check.
+SdKit is a small PowerShell module for common Level 1 and Level 2 service desk work in an Australian managed service provider environment.
 
-Built the way a real desk works: every command finishes with a
-**paste-ready PSA ticket note**, client-specific conventions live in
-config (not in scripts), and anything that changes a tenant or a machine
-supports `-WhatIf`.
+I built it around a simple workflow: collect useful facts, make the next action clear, and leave a ticket note that another technician can understand later.
 
-> Portfolio project by Dana Kim. The sample clients are fictional; the
-> workflows are the real ones an Australian MSP desk runs every day.
+The sample clients are fictional. The commands are intended for lab use and should be reviewed against an organisation's access controls, change process and PSA before being used in production.
 
-## Job match: Service Desk Officer / MSP L1–L2
+## What it covers
 
-This project is built to demonstrate the exact skill set an Adelaide MSP
-Level 1/2 Service Desk Officer role asks for. Each requirement maps to
-something concrete in this repo:
-
-| Role requirement | Where it's demonstrated |
+| Command | Use |
 |---|---|
-| **L1/L2 troubleshooting** (desktops, laptops, printers, peripherals) | [`Invoke-SdTriage`](SdKit/Public/Invoke-SdTriage.ps1) — hardware, disk, reboot, event-log and printer snapshot |
-| **Microsoft 365 admin** (Exchange Online, SharePoint, Teams, Entra ID, Intune) | [`Get-SdUserSnapshot`](SdKit/Public/Get-SdUserSnapshot.ps1), [`New-SdClientUser`](SdKit/Public/New-SdClientUser.ps1), [`Disable-SdClientUser`](SdKit/Public/Disable-SdClientUser.ps1) + [SharePoint/Teams runbook](docs/runbook-sharepoint-teams.md) |
-| **Windows Server, Active Directory** | [`Reset-SdAdAccount`](SdKit/Public/Reset-SdAdAccount.ps1) (unlock/reset + lockout-source lookup) + [AD support runbook](docs/runbook-ad-support.md) (domain join, secure channel, GPO, mapped drives) |
-| **Basic networking** (DNS, DHCP, VPNs, switches, firewalls) | [`Test-SdNetworkStack`](SdKit/Public/Test-SdNetworkStack.ps1) 7-layer ladder + [server-side DNS/DHCP checklist](docs/runbook-ad-support.md#server-side-dns--dhcp-checklist) |
-| **Building, imaging, configuring, deploying PCs** (run-ups, SOE) | [`Invoke-SdPcRunUp`](SdKit/Public/Invoke-SdPcRunUp.ps1) + [run-up runbook](docs/runbook-pc-runup.md) |
-| **Documentation in a PSA/ticketing system** | Every command's `-AsTicketNote`; [ticket-note standards](docs/ticket-note-standards.md) + [PSA integration](docs/psa-integration.md) (ConnectWise / Autotask / NinjaOne / Syncro) |
-| **Escalating to senior engineers** | [`New-SdTicketNote -Escalation`](SdKit/Public/New-SdTicketNote.ps1) handover format + [escalation guide](docs/escalation-guide.md) |
-| **Translating tech-speak into plain English** | `PlainEnglish` field on every network check, written to read down the phone |
-| **ACSC Essential Eight & SMB security** *(highly regarded)* | [`Test-SdEssentialEight`](SdKit/Public/Test-SdEssentialEight.ps1) |
-| **IT project coordination** *(highly regarded)* | Onboarding/offboarding/run-up runbooks with pre-flight and close-out checklists |
+| `Invoke-SdTriage` | Collect workstation facts such as uptime, disk space, event log errors and printers |
+| `Test-SdNetworkStack` | Check the local network, gateway, DNS, HTTPS and Microsoft 365 endpoints |
+| `New-SdTicketNote` | Build a consistent PSA note for an incident, request or escalation |
+| `Reset-SdAdAccount` | Inspect, unlock or reset an on-premises Active Directory account |
+| `Get-SdUserSnapshot` | Review a Microsoft 365 user's account, licences, MFA methods, groups and devices |
+| `New-SdClientUser` | Create a new Entra ID user using a client's naming and group conventions |
+| `Disable-SdClientUser` | Disable a cloud user, revoke sessions and record offboarding actions |
+| `Invoke-SdPcRunUp` | Apply a workshop PC baseline and produce a QA report |
+| `Test-SdEssentialEight` | Check workstation signals that relate to the ACSC Essential Eight |
+| `New-SdComputerName` | Build a client-compliant computer name within the 15-character NetBIOS limit |
+| `Get-SdClientConfig` | Load and validate client-specific conventions from JSON |
 
-## Example outputs
-
-Real output from the toolkit — no need to run anything to see what a shift
-with SdKit produces:
-
-- 📋 [Workstation triage note](samples/sample-triage-ticket-note.txt) — paste-ready `Invoke-SdTriage` output with low-disk flags
-- 🔑 [AD unlock/reset note](samples/sample-ad-ticket-note.txt) — `Reset-SdAdAccount` with lockout-source identified
-- 🖥️ [PC run-up report](samples/sample-runup-report.md) — SOE build QA with outstanding items flagged
-- 🛡️ [Essential Eight quick check](samples/sample-e8-quickcheck.txt) — workstation security signals with plain-English advice
-
-## What's in the box
-
-| Command | The ticket it answers |
-|---|---|
-| `Invoke-SdTriage` | "My computer is slow / broken" — one-command workstation snapshot with low-disk flags, pending reboot, event log sweep, printers |
-| `Test-SdNetworkStack` | "The internet is down" — 7-layer ladder from adapter to M365 front doors, with plain-English explanations for the client |
-| `New-SdTicketNote` | Every ticket — standardised issue/impact/steps/resolution notes, plus an escalation handover mode with a "ruled out" section |
-| `Reset-SdAdAccount` | "I'm locked out / forgot my password" — on-prem AD unlock and reset, tells you which device caused the lockout (event 4740 on the PDC) |
-| `Get-SdUserSnapshot` | "I can't sign in" — account state, licences, MFA methods, Intune devices and recent sign-in failures from Microsoft Graph |
-| `New-SdClientUser` | "New starter Monday" — Entra ID user per client convention, licence (with seat-count check), default groups, temp password |
-| `Disable-SdClientUser` | "Departing today" — disable, revoke sessions, scramble password, strip groups, convert mailbox to shared; audit-grade action log |
-| `Invoke-SdPcRunUp` | Workshop bench — SOE build: rename, time zone, power plan, winget app set, debloat, TPM/BitLocker/disk QA, markdown report |
-| `Test-SdEssentialEight` | "How exposed is this client?" — workstation-level Essential Eight signals, honest about what needs a tenant-level look |
-| `New-SdComputerName` | Naming-convention names with the 15-character NetBIOS limit handled properly |
-| `Get-SdClientConfig` | Strictly validated per-client config (UPN pattern, licence, groups, naming) |
+All commands that collect diagnostics can return structured objects or a plain text note suitable for pasting into a PSA. Commands that change a machine or tenant support `-WhatIf` and confirmation prompts where appropriate.
 
 ## Quick start
 
+From the repository root:
+
 ```powershell
-# From the repo root
 Import-Module ./SdKit/SdKit.psd1
 
-# Works anywhere, no tenant needed:
-New-SdTicketNote -Summary 'Printer offline' -Issue 'Reception printer offline since 9am.' `
-    -Steps 'Power-cycled printer','Cleared stuck spooler job' `
-    -Resolution 'Test page printed, client confirmed.' -Status Resolved
-
-# On a Windows machine:
-Invoke-SdTriage -AsTicketNote
-Test-SdNetworkStack -AsTicketNote
-Test-SdEssentialEight -AsTicketNote
-
-# Against a client tenant (read-only):
-Connect-MgGraph -Scopes 'User.Read.All','UserAuthenticationMethod.Read.All','Directory.Read.All'
-Get-SdUserSnapshot -UserPrincipalName someone@client.com.au -AsTicketNote
+New-SdTicketNote -Summary 'Printer offline' `
+    -Issue 'Reception printer offline since 9am.' `
+    -Steps 'Power-cycled printer', 'Cleared the stuck print queue' `
+    -Resolution 'Test page printed and the client confirmed printing was working.' `
+    -Status Resolved
 ```
 
-Set up the config once:
+On an affected Windows workstation:
 
 ```powershell
-Copy-Item ./config/clients.sample.json ./config/clients.json          # then fill in real clients
+Invoke-SdTriage -Client 'Acme Conveyancing' -AsTicketNote
+Test-SdNetworkStack -InternalHost 'dc01.acme.example.com.au' -AsTicketNote
+Test-SdEssentialEight -AsTicketNote
+```
+
+For a read-only Microsoft Graph snapshot, connect with the scopes required for the data you want:
+
+```powershell
+Connect-MgGraph -Scopes @(
+    'User.Read.All',
+    'UserAuthenticationMethod.Read.All',
+    'Directory.Read.All',
+    'DeviceManagementManagedDevices.Read.All',
+    'AuditLog.Read.All'
+)
+
+Get-SdUserSnapshot -UserPrincipalName someone@acme.example.com.au -AsTicketNote
+```
+
+## Client configuration
+
+Copy the sample files and keep the real files out of Git:
+
+```powershell
+Copy-Item ./config/clients.sample.json ./config/clients.json
 Copy-Item ./config/runup-baseline.sample.json ./config/runup-baseline.json
 ```
 
-`clients.json` and `runup-baseline.json` are git-ignored — client
-identifiers never land in the repo.
+The sample values are placeholders. Replace them with approved test tenant values before running any tenant or workstation changing command. Do not place real passwords, recovery keys, tokens or client secrets in this repository.
 
-## Layout
+## Repository layout
 
-```
-SdKit/                  PowerShell module
-  Public/               eleven exported commands, one file each
-  Private/              formatters, Graph/AD guards, temp password generator
-config/                 *.sample.json committed; real config git-ignored
-docs/                   runbooks + desk standards
-  ticket-note-standards.md
-  escalation-guide.md
-  psa-integration.md            (ConnectWise / Autotask / NinjaOne / Syncro)
-  runbook-ad-support.md         (AD unlock/reset, domain join, GPO, DNS/DHCP)
-  runbook-sharepoint-teams.md
-  runbook-network-triage.md
-  runbook-pc-runup.md
-  runbook-user-onboarding.md
-  runbook-user-offboarding.md
-samples/                example outputs (triage, AD, run-up report, E8 check)
-tests/                  Pester 5 suite (21 tests) for the cross-platform logic
+```text
+SdKit/
+├── Public/          exported PowerShell commands
+├── Private/         internal guards, formatters and helpers
+├── SdKit.psd1       module manifest
+└── SdKit.psm1       module loader
+
+config/              sample JSON; real configuration is ignored
+docs/                runbooks and ticket note standards
+samples/             representative output using fictional data
+tests/               Pester tests
+.github/             continuous integration workflow
 ```
 
-## Design notes
+## Design decisions
 
-- **Ticket notes are the product.** Every diagnostic ends in `-AsTicketNote`
-  because work that isn't documented didn't happen — see
-  [docs/ticket-note-standards.md](docs/ticket-note-standards.md).
-- **Plain English is a feature.** Network checks carry a `PlainEnglish`
-  field per layer, written to be read down the phone to a client.
-- **Safe by default.** Tenant- and machine-changing commands support
-  `-WhatIf`/`-Confirm`; offboarding refuses to half-handle hybrid
-  identities; passwords are never written to tickets or logs.
-- **Config over code.** UPN patterns, naming conventions, licence SKUs and
-  default groups are per-client JSON, validated strictly with error
-  messages that name the client and the field.
-- **Honest checks.** The Essential Eight sweep marks tenant-level
-  strategies as ManualCheck rather than pretending a registry read
-  settles MFA or backups.
+### Ticket notes are part of the output
+
+The module keeps the note format plain text so it can be reviewed before it is pasted into ConnectWise, Autotask, NinjaOne, Syncro or another PSA. See [ticket-note-standards.md](docs/ticket-note-standards.md) and [psa-integration.md](docs/psa-integration.md).
+
+### Client detail stays in configuration
+
+UPN patterns, computer naming conventions, licence SKUs and default groups belong in client configuration, not in the PowerShell functions. `Get-SdClientConfig` validates the required fields before another command uses them.
+
+### Checks show their limits
+
+`Test-SdEssentialEight` is a workstation quick check. It is not a formal Essential Eight maturity assessment. MFA, backups, privileged access and other organisation-level controls need to be checked in the relevant tenant, policy or service reports.
+
+### Changes are reviewable
+
+The tenant and workstation commands use `-WhatIf` or confirmation prompts. Temporary passwords are returned to the caller but are not written to ticket notes. Pass them to the user through an approved out-of-band method.
+
+## Examples and runbooks
+
+The [samples](samples) directory contains representative output for:
+
+* workstation triage
+* Active Directory account support
+* a PC run-up report
+* an Essential Eight quick check
+
+The [docs](docs) directory contains runbooks for:
+
+* network triage
+* Active Directory support
+* SharePoint and Teams support
+* user onboarding and offboarding
+* workshop PC run-up
+* ticket notes and escalation handovers
 
 ## Testing
 
+Install Pester 5 if it is not already available, then run:
+
 ```powershell
-Invoke-Pester -Path ./tests
+Invoke-Pester -Path ./tests/SdKit.Tests.ps1
 ```
 
-The suite covers the pure logic (note formats, naming/NetBIOS limits,
-config validation, password generation) and runs on macOS/Linux/Windows —
-the Windows-only collectors are exercised on a bench machine or lab VM.
+The test suite covers module loading, ticket note formatting, computer naming, configuration validation, password generation, triage formatting, Active Directory guards and the cross-platform parts of the network check. Windows-only collectors still need a Windows lab or bench machine for full verification.
 
 ## Requirements
 
-- PowerShell 5.1+ (module) / PowerShell 7+ (tests)
-- Windows for `Invoke-SdTriage`, `Invoke-SdPcRunUp`, `Test-SdEssentialEight`
-  and the Windows layers of `Test-SdNetworkStack`
-- RSAT / the `ActiveDirectory` module for `Reset-SdAdAccount` (run from a
-  domain-joined admin box or jump host)
-- [Microsoft Graph PowerShell SDK](https://learn.microsoft.com/powershell/microsoftgraph/)
-  for the M365 commands; ExchangeOnlineManagement for mailbox conversion;
-  Microsoft.Online.SharePoint.PowerShell / MicrosoftTeams for the
-  SharePoint/Teams runbook
-- `winget` on the bench machine for app installs
+* PowerShell 5.1 or later for the module
+* Pester 5 for tests
+* Windows for workstation triage, PC run-up and the Essential Eight check
+* RSAT and the ActiveDirectory module for `Reset-SdAdAccount`
+* Microsoft Graph PowerShell SDK for the Microsoft 365 commands
+* ExchangeOnlineManagement for mailbox conversion during offboarding
+* `winget` on a workshop machine when installing the baseline application set
+
+## Limitations
+
+This is a portfolio project, not a complete PSA or RMM product. It does not store credentials, publish tickets, manage approvals or replace an organisation's change and access process. Test commands against a non-production tenant and a disposable workstation first.
+
+The Essential Eight quick check follows the scope of the ACSC maturity model but deliberately reports several controls as manual checks. See the [official ACSC Essential Eight material](https://www.cyber.gov.au/business-government/asds-cyber-security-frameworks/essential-eight/essential-eight-maturity-model) before treating any result as assessment evidence.
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

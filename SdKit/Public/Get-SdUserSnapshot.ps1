@@ -1,4 +1,4 @@
-function Get-SdUserSnapshot {
+﻿function Get-SdUserSnapshot {
     <#
     .SYNOPSIS
         Everything you need for a "user can't sign in" ticket, in one call.
@@ -18,8 +18,8 @@ function Get-SdUserSnapshot {
         tenant. Read-only — safe to run while the client is on the phone.
 
     .EXAMPLE
-        Connect-MgGraph -Scopes 'User.Read.All','UserAuthenticationMethod.Read.All','Directory.Read.All','DeviceManagementManagedDevices.Read.All'
-        Get-SdUserSnapshot -UserPrincipalName sarah.m@acmeconvey.com.au -AsTicketNote
+        Connect-MgGraph -Scopes 'User.Read.All','UserAuthenticationMethod.Read.All','Directory.Read.All','DeviceManagementManagedDevices.Read.All','AuditLog.Read.All'
+        Get-SdUserSnapshot -UserPrincipalName sarah.m@acme.example.com.au -AsTicketNote
     #>
     [CmdletBinding()]
     param (
@@ -32,7 +32,8 @@ function Get-SdUserSnapshot {
 
     process {
         Assert-SdGraphConnection -RequiredScopes @(
-            'User.Read.All', 'UserAuthenticationMethod.Read.All', 'Directory.Read.All'
+            'User.Read.All', 'UserAuthenticationMethod.Read.All', 'Directory.Read.All',
+            'DeviceManagementManagedDevices.Read.All', 'AuditLog.Read.All'
         ) | Out-Null
 
         Write-Verbose "Fetching account state for $UserPrincipalName..."
@@ -41,8 +42,16 @@ function Get-SdUserSnapshot {
             -ErrorAction Stop
 
         Write-Verbose 'Fetching licences...'
-        $licences = @(Get-MgUserLicenseDetail -UserId $user.Id -ErrorAction SilentlyContinue |
-            ForEach-Object { $_.SkuPartNumber })
+        $licencesAvailable = $true
+        try {
+            $licences = @(Get-MgUserLicenseDetail -UserId $user.Id -ErrorAction Stop |
+                ForEach-Object { $_.SkuPartNumber })
+        }
+        catch {
+            $licencesAvailable = $false
+            $licences = @()
+            Write-Verbose "Licence lookup unavailable: $($_.Exception.Message)"
+        }
 
         # Map Graph's auth method OData types to names a tech recognises.
         Write-Verbose 'Fetching MFA methods...'
@@ -56,20 +65,37 @@ function Get-SdUserSnapshot {
             '#microsoft.graph.passwordAuthenticationMethod'               = 'Password'
             '#microsoft.graph.temporaryAccessPassAuthenticationMethod'    = 'Temporary Access Pass'
         }
-        $mfaMethods = @(Get-MgUserAuthenticationMethod -UserId $user.Id -ErrorAction SilentlyContinue |
-            ForEach-Object {
-                $type = $_.AdditionalProperties.'@odata.type'
-                if ($methodNames.ContainsKey($type)) { $methodNames[$type] } else { $type }
-            } | Where-Object { $_ -ne 'Password' })
+        $mfaAvailable = $true
+        try {
+            $mfaMethods = @(Get-MgUserAuthenticationMethod -UserId $user.Id -ErrorAction Stop |
+                ForEach-Object {
+                    $type = $_.AdditionalProperties.'@odata.type'
+                    if ($methodNames.ContainsKey($type)) { $methodNames[$type] } else { $type }
+                } | Where-Object { $_ -ne 'Password' })
+        }
+        catch {
+            $mfaAvailable = $false
+            $mfaMethods = @()
+            Write-Verbose "MFA lookup unavailable: $($_.Exception.Message)"
+        }
 
         Write-Verbose 'Fetching group memberships...'
-        $groups = @(Get-MgUserMemberOf -UserId $user.Id -All -ErrorAction SilentlyContinue |
-            ForEach-Object { $_.AdditionalProperties.displayName } |
-            Where-Object { $_ } | Sort-Object)
+        $groupsAvailable = $true
+        try {
+            $groups = @(Get-MgUserMemberOf -UserId $user.Id -All -ErrorAction Stop |
+                ForEach-Object { $_.AdditionalProperties.displayName } |
+                Where-Object { $_ } | Sort-Object)
+        }
+        catch {
+            $groupsAvailable = $false
+            $groups = @()
+            Write-Verbose "Group lookup unavailable: $($_.Exception.Message)"
+        }
 
         # Intune devices — scope may not be granted, so degrade gracefully.
         Write-Verbose 'Fetching Intune devices...'
         $devices = @()
+        $devicesAvailable = $true
         try {
             $devices = @(Get-MgUserManagedDevice -UserId $user.Id -ErrorAction Stop | ForEach-Object {
                 [pscustomobject]@{
@@ -81,6 +107,7 @@ function Get-SdUserSnapshot {
             })
         }
         catch {
+            $devicesAvailable = $false
             Write-Verbose "Intune device lookup unavailable in this session: $($_.Exception.Message)"
         }
 
@@ -88,6 +115,7 @@ function Get-SdUserSnapshot {
         # even though the scope isn't always granted to the desk.
         Write-Verbose 'Fetching recent sign-in failures...'
         $signInFailures = @()
+        $signInsAvailable = $true
         if (Get-Command Get-MgAuditLogSignIn -ErrorAction SilentlyContinue) {
             try {
                 $filter = "userPrincipalName eq '$($user.UserPrincipalName)' and status/errorCode ne 0"
@@ -101,8 +129,12 @@ function Get-SdUserSnapshot {
                 })
             }
             catch {
+                $signInsAvailable = $false
                 Write-Verbose "Sign-in log unavailable (needs AuditLog.Read.All): $($_.Exception.Message)"
             }
+        }
+        else {
+            $signInsAvailable = $false
         }
 
         $snapshot = [pscustomobject]@{
@@ -118,6 +150,13 @@ function Get-SdUserSnapshot {
             Groups             = $groups
             Devices            = $devices
             SignInFailures     = $signInFailures
+            Availability       = [pscustomobject]@{
+                Licences          = $licencesAvailable
+                MfaMethods        = $mfaAvailable
+                Groups            = $groupsAvailable
+                IntuneDevices     = $devicesAvailable
+                SignInFailures    = $signInsAvailable
+            }
         }
 
         if (-not $AsTicketNote) { return $snapshot }
@@ -126,12 +165,24 @@ function Get-SdUserSnapshot {
         $sb = [System.Text.StringBuilder]::new()
         [void]$sb.AppendLine(('=== M365 USER SNAPSHOT — {0} ===' -f $snapshot.UserPrincipalName))
         [void]$sb.AppendLine(('Captured:       {0}' -f (Get-Date -Format $script:SdDateFormat)))
-        [void]$sb.AppendLine(('Name:           {0} ({1}, {2})' -f $snapshot.DisplayName, $snapshot.JobTitle, $snapshot.Department))
+        $role = (@($snapshot.JobTitle, $snapshot.Department) | Where-Object { $_ }) -join ', '
+        $roleText = if ($role) { " ($role)" } else { '' }
+        [void]$sb.AppendLine(('Name:           {0}{1}' -f $snapshot.DisplayName, $roleText))
         [void]$sb.AppendLine(('Account:        {0}' -f $(if ($snapshot.AccountEnabled) { 'Enabled' } else { 'DISABLED' })))
         [void]$sb.AppendLine(('Identity source: {0}' -f $(if ($snapshot.SyncedFromAD) { 'Synced from on-prem AD (fix password/attributes in AD!)' } else { 'Cloud-only (Entra ID)' })))
         [void]$sb.AppendLine(('Password set:   {0}' -f $snapshot.LastPasswordChange))
-        [void]$sb.AppendLine(('Licences:       {0}' -f $(if ($licences) { $licences -join ', ' } else { 'NONE — no licence, no mailbox' })))
-        [void]$sb.AppendLine(('MFA methods:    {0}' -f $(if ($mfaMethods) { $mfaMethods -join ', ' } else { 'NONE registered — expect sign-in trouble' })))
+        $licenceText = if (-not $licencesAvailable) { 'Unavailable (check Graph permissions)' } elseif ($licences) { $licences -join ', ' } else { 'None registered' }
+        $mfaText = if (-not $mfaAvailable) { 'Unavailable (check Graph permissions)' } elseif ($mfaMethods) { $mfaMethods -join ', ' } else { 'None registered' }
+        [void]$sb.AppendLine(('Licences:       {0}' -f $licenceText))
+        [void]$sb.AppendLine(('MFA methods:    {0}' -f $mfaText))
+        $unavailable = @(
+            if (-not $groupsAvailable) { 'groups' }
+            if (-not $devicesAvailable) { 'Intune devices' }
+            if (-not $signInsAvailable) { 'sign-in failures' }
+        )
+        if ($unavailable) {
+            [void]$sb.AppendLine(('Unavailable data: {0}' -f ($unavailable -join ', ')))
+        }
         if ($devices.Count -gt 0) {
             [void]$sb.AppendLine('Intune devices:')
             foreach ($device in $devices) {

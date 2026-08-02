@@ -1,4 +1,4 @@
-function New-SdTempPassword {
+﻿function New-SdTempPassword {
     <#
     .SYNOPSIS
         Generates a readable temporary password for new starters and resets.

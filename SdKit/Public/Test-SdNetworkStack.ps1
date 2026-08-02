@@ -1,4 +1,4 @@
-function Test-SdNetworkStack {
+﻿function Test-SdNetworkStack {
     <#
     .SYNOPSIS
         Layered "can't get to the internet / can't get email" diagnostics.
@@ -56,11 +56,11 @@ function Test-SdNetworkStack {
     # Cross-platform TCP probe — quieter and more portable than
     # Test-NetConnection, and it respects our timeout.
     $testTcp = {
-        param ($TargetHost, $Port)
+        param ($TargetHost, $Port, $Timeout)
         $client = [System.Net.Sockets.TcpClient]::new()
         try {
             $task = $client.ConnectAsync($TargetHost, $Port)
-            if ($task.Wait($TimeoutMs) -and $client.Connected) { return $true }
+            if ($task.Wait($Timeout) -and $client.Connected) { return $true }
             return $false
         }
         catch { return $false }
@@ -150,7 +150,7 @@ function Test-SdNetworkStack {
     }
 
     # --- Layer 5: HTTPS egress ---------------------------------------------
-    if (& $testTcp $ExternalHost 443) {
+    if (& $testTcp $ExternalHost 443 $TimeoutMs) {
         & $addCheck 5 'HTTPS egress (443)' 'Pass' "$ExternalHost`:443 reachable" `
             'General internet access is working.'
     }
@@ -161,7 +161,7 @@ function Test-SdNetworkStack {
 
     # --- Layer 6: Microsoft 365 front doors ---------------------------------
     foreach ($endpoint in 'login.microsoftonline.com', 'outlook.office365.com') {
-        if (& $testTcp $endpoint 443) {
+        if (& $testTcp $endpoint 443 $TimeoutMs) {
             & $addCheck 6 "M365 endpoint ($endpoint)" 'Pass' 'Reachable on 443' `
                 'Microsoft 365 sign-in and mail services are reachable from here.'
         }

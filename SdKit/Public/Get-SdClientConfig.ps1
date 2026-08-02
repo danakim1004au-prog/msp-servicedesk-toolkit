@@ -1,4 +1,4 @@
-function Get-SdClientConfig {
+﻿function Get-SdClientConfig {
     <#
     .SYNOPSIS
         Loads and validates the per-client configuration file.
@@ -54,6 +54,19 @@ function Get-SdClientConfig {
                 throw "Client '$label' in '$Path' is missing required field '$field'."
             }
         }
+
+        if ($client.upnPattern -match '\{(?!first|last)[^}]+\}') {
+            throw "Client '$($client.code)' in '$Path' has an unsupported token in 'upnPattern'. Use {first} and {last}."
+        }
+
+        if ($client.computerNamePattern -match '\{(?!code|type|serial)[^}]+\}') {
+            throw "Client '$($client.code)' in '$Path' has an unsupported token in 'computerNamePattern'. Use {code}, {type} and {serial}."
+        }
+    }
+
+    $duplicateCodes = @($config.clients.code | Group-Object | Where-Object Count -gt 1)
+    if ($duplicateCodes.Count -gt 0) {
+        throw "Client config at '$Path' contains duplicate client code(s): $($duplicateCodes.Name -join ', ')"
     }
 
     if ($ClientCode) {

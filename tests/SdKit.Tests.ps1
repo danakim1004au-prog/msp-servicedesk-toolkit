@@ -103,6 +103,16 @@ Describe 'New-SdComputerName' {
         $name = New-SdComputerName -Pattern '{code}-{type}-{serial}' -ClientCode 'LONGCLIENTCODE' -DeviceType 'DT' -Serial 'A1' -WarningAction SilentlyContinue
         $name.Length | Should -BeLessOrEqual 15
     }
+
+    It 'rejects unsupported naming tokens' {
+        { New-SdComputerName -Pattern '{code}-{asset}-{serial}' -ClientCode 'ACME' -DeviceType 'LT' -Serial 'A1' } |
+            Should -Throw '*unsupported token*'
+    }
+
+    It 'rejects an empty serial' {
+        { New-SdComputerName -Pattern '{code}-{type}-{serial}' -ClientCode 'ACME' -DeviceType 'LT' -Serial ' ' } |
+            Should -Throw '*Serial must contain*'
+    }
 }
 
 Describe 'Get-SdClientConfig' {
@@ -114,7 +124,7 @@ Describe 'Get-SdClientConfig' {
     It 'returns a single client by code' {
         $client = Get-SdClientConfig -Path $script:SamplesConfig -ClientCode ACME
         $client.name | Should -Be 'Acme Conveyancing Pty Ltd'
-        $client.domain | Should -Be 'acmeconvey.com.au'
+        $client.domain | Should -Be 'acme.example.com.au'
     }
 
     It 'lists the known codes when the code does not exist' {
@@ -132,6 +142,33 @@ Describe 'Get-SdClientConfig' {
         @{ clients = @(@{ code = 'BAD'; name = 'Bad Co' }) } | ConvertTo-Json -Depth 5 | Set-Content -Path $broken
         try {
             { Get-SdClientConfig -Path $broken } | Should -Throw "*Client 'BAD'*missing required field 'domain'*"
+        }
+        finally {
+            Remove-Item -Path $broken -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'rejects duplicate client codes' {
+        $broken = Join-Path ([System.IO.Path]::GetTempPath()) 'sdkit-duplicate-clients.json'
+        @{ clients = @(
+            @{ code = 'DUP'; name = 'First Co'; domain = 'first.example.com'; upnPattern = '{first}.{last}'; computerNamePattern = '{code}-{type}-{serial}' },
+            @{ code = 'DUP'; name = 'Second Co'; domain = 'second.example.com'; upnPattern = '{first}.{last}'; computerNamePattern = '{code}-{type}-{serial}' }
+        ) } | ConvertTo-Json -Depth 5 | Set-Content -Path $broken
+        try {
+            { Get-SdClientConfig -Path $broken } | Should -Throw '*duplicate client code*'
+        }
+        finally {
+            Remove-Item -Path $broken -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'rejects unsupported pattern tokens' {
+        $broken = Join-Path ([System.IO.Path]::GetTempPath()) 'sdkit-unsupported-token.json'
+        @{ clients = @(
+            @{ code = 'BAD'; name = 'Bad Co'; domain = 'bad.example.com'; upnPattern = '{first}.{middle}.{last}'; computerNamePattern = '{code}-{type}-{serial}' }
+        ) } | ConvertTo-Json -Depth 5 | Set-Content -Path $broken
+        try {
+            { Get-SdClientConfig -Path $broken } | Should -Throw '*unsupported token*'
         }
         finally {
             Remove-Item -Path $broken -ErrorAction SilentlyContinue

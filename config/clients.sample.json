@@ -4,7 +4,7 @@
     {
       "code": "ACME",
       "name": "Acme Conveyancing Pty Ltd",
-      "domain": "acmeconvey.com.au",
+      "domain": "acme.example.com.au",
       "tenantId": "00000000-0000-0000-0000-000000000000",
       "upnPattern": "{first}.{last}",
       "computerNamePattern": "{code}-{type}-{serial}",
@@ -17,7 +17,7 @@
     {
       "code": "BLU",
       "name": "Bluegum Physio Group",
-      "domain": "bluegumphysio.com.au",
+      "domain": "bluegum.example.com.au",
       "tenantId": "00000000-0000-0000-0000-000000000000",
       "upnPattern": "{first}{last}",
       "computerNamePattern": "{code}-{type}-{serial}",

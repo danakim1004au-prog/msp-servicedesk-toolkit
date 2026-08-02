@@ -1,4 +1,4 @@
-function Format-SdTriageNote {
+﻿function Format-SdTriageNote {
     <#
     .SYNOPSIS
         Turns an Invoke-SdTriage snapshot into a paste-ready PSA ticket note.

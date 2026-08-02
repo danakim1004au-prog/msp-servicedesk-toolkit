@@ -29,7 +29,7 @@ not the site:
    a Teams membership problem — it drifts out of sync immediately.
    ```powershell
    Get-SPOSite -Identity https://acmeconvey.sharepoint.com/sites/settlements | fl Title,Owner,SharingCapability
-   Get-SPOUser -Site https://acmeconvey.sharepoint.com/sites/settlements -LoginName jsmith@acmeconvey.com.au
+   Get-SPOUser -Site https://acmeexample.sharepoint.com/sites/settlements -LoginName jsmith@acme.example.com.au
    ```
 3. **Sharing blocked?** If it's an external person, `SharingCapability` on
    the site (and the tenant) may forbid it. Change deliberately and note it
@@ -55,10 +55,10 @@ Treat it like a mini onboarding — decide the standard, then apply it:
 
 ```powershell
 # Create the Team (creates the M365 group + SharePoint site together):
-New-Team -DisplayName 'Project Aurora' -Visibility Private -Owner 'pm@acmeconvey.com.au'
+New-Team -DisplayName 'Project Aurora' -Visibility Private -Owner 'pm@acme.example.com.au'
 
 # Add members:
-Add-TeamUser -GroupId <id> -User jsmith@acmeconvey.com.au -Role Member
+Add-TeamUser -GroupId <id> -User jsmith@acme.example.com.au -Role Member
 ```
 
 Confirm with the client: private vs public, who owns it (always ≥2 owners
