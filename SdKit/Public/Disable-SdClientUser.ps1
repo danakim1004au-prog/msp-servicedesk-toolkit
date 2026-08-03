@@ -1,18 +1,17 @@
 ﻿function Disable-SdClientUser {
     <#
     .SYNOPSIS
-        Offboards a departing user — security first, then tidy-up.
+        Disables a cloud user and records the offboarding actions.
 
     .DESCRIPTION
-        Runs the departure steps in the order that matters when someone has
-        just walked out the door:
+        Runs the following cloud-side offboarding steps:
 
           1. Disable the account (blocks new sign-ins immediately)
           2. Revoke refresh tokens (kills existing sessions on all devices)
           3. Scramble the password
           4. Remove group memberships (recorded first, for the ticket)
           5. Optionally convert the mailbox to shared (frees the licence
-             while keeping the mail history) — needs an Exchange Online
+             while keeping the mail history) - needs an Exchange Online
              session; recorded as a manual step if one isn't loaded
 
         Every action lands in the ticket note, because offboarding is the
@@ -33,13 +32,13 @@
         # licence is reclaimed (shared mailboxes under 50 GB are free).
         [switch]$ConvertMailboxToShared,
 
-        # Who requested the offboarding — goes in the ticket for the audit trail.
+        # Who requested the offboarding - goes in the ticket for the audit trail.
         [string]$RequestedBy
     )
 
     process {
         Assert-SdGraphConnection -RequiredScopes @(
-            'User.ReadWrite.All', 'GroupMember.ReadWrite.All'
+            'User.ReadWrite.All', 'User.RevokeSessions.All', 'GroupMember.ReadWrite.All'
         ) | Out-Null
 
         $user = Get-MgUser -UserId $UserPrincipalName -Property 'id,displayName,userPrincipalName,accountEnabled,onPremisesSyncEnabled' -ErrorAction Stop
@@ -55,7 +54,10 @@
         $failures = [System.Collections.Generic.List[string]]::new()
 
         # --- 1. Disable sign-in ------------------------------------------------
-        if ($PSCmdlet.ShouldProcess($user.UserPrincipalName, 'Disable account')) {
+        if (-not $user.AccountEnabled) {
+            $actions.Add('Account was already disabled')
+        }
+        elseif ($PSCmdlet.ShouldProcess($user.UserPrincipalName, 'Disable account')) {
             try {
                 Update-MgUser -UserId $user.Id -AccountEnabled:$false -ErrorAction Stop
                 $actions.Add('Disabled the account (new sign-ins blocked)')
@@ -69,7 +71,7 @@
         if ($PSCmdlet.ShouldProcess($user.UserPrincipalName, 'Revoke sign-in sessions')) {
             try {
                 Revoke-MgUserSignInSession -UserId $user.Id -ErrorAction Stop | Out-Null
-                $actions.Add('Revoked refresh tokens (existing sessions will drop within the hour)')
+                $actions.Add('Revoked sign-in sessions (token invalidation can take effect after a delay)')
             }
             catch {
                 $failures.Add("FAILED to revoke sign-in sessions: $($_.Exception.Message)")
@@ -109,7 +111,7 @@
                     $actions.Add("Removed from group '$groupName'")
                 }
                 catch {
-                    # Dynamic and role-assignable groups won't allow this —
+                    # Dynamic and role-assignable groups won't allow this -
                     # note it rather than fail the run.
                     $failure = "GROUP NOT REMOVED: '$groupName' - $($_.Exception.Message)"
                     $failures.Add($failure)
@@ -123,7 +125,7 @@
                 if ($PSCmdlet.ShouldProcess($user.UserPrincipalName, 'Convert mailbox to shared')) {
                     try {
                         Set-Mailbox -Identity $user.UserPrincipalName -Type Shared -ErrorAction Stop
-                        $actions.Add('Converted mailbox to shared - licence can now be reclaimed')
+                        $actions.Add('Converted mailbox to shared; confirm storage and retention requirements before removing the licence')
                     }
                     catch {
                         $failures.Add("FAILED to convert the mailbox to shared: $($_.Exception.Message)")
@@ -143,10 +145,18 @@
 
         if ($WhatIfPreference) {
             Write-Information 'WhatIf run complete. No tenant changes were made.' -InformationAction Continue
+            $plannedActions = @(
+                'Disable account'
+                'Revoke sign-in sessions'
+                'Reset password to a random value'
+                @($groups | ForEach-Object { "Remove from group '$($_.AdditionalProperties.displayName)'" })
+                if ($ConvertMailboxToShared) { 'Convert mailbox to shared' }
+            )
             return [pscustomobject]@{
                 WhatIf            = $true
                 UserPrincipalName = $user.UserPrincipalName
                 DisplayName       = $user.DisplayName
+                PlannedActions    = @($plannedActions)
                 Actions           = @()
                 FailedActions     = @()
                 TicketNote        = $null
@@ -157,26 +167,28 @@
         if ($RequestedBy) { $issueText += " Requested by: $RequestedBy." }
 
         $nextSteps = [System.Collections.Generic.List[string]]::new()
-        $nextSteps.Add('Reclaim/unassign the licence once mailbox conversion is confirmed')
+        $nextSteps.Add('Confirm mailbox size, archive and retention requirements before reclaiming the licence')
         $nextSteps.Add('Confirm mail forwarding/delegate access requirements with the client')
-        $nextSteps.Add('Check for files in OneDrive that the team needs before the 30-day retention lapses')
+        $nextSteps.Add('Confirm the tenant OneDrive retention period and transfer any required files before it ends')
         $nextSteps.Add('Remove the user from any third-party apps outside SSO (client to confirm the list)')
         if ($failures.Count -gt 0) {
             $nextSteps.Add('Review the failed actions above before closing the offboarding ticket')
         }
 
+        $status = if ($failures.Count -gt 0) { 'Escalated' } else { 'In progress' }
         $note = New-SdTicketNote -Summary "User offboarding - $($user.DisplayName)" `
             -Client $Client `
             -Issue $issueText `
             -Steps (@($actions.ToArray()) + @($failures.ToArray())) `
             -NextSteps $nextSteps.ToArray() `
-            -Status 'In progress'
+            -Status $status
 
         [pscustomobject]@{
             UserPrincipalName = $user.UserPrincipalName
             DisplayName       = $user.DisplayName
             Actions           = $actions.ToArray()
             FailedActions     = $failures.ToArray()
+            Status            = $status
             TicketNote        = $note
         }
     }

@@ -1,20 +1,16 @@
 ﻿function New-SdClientUser {
     <#
     .SYNOPSIS
-        Onboards a new starter for a managed client — the standard way, every time.
+        Creates and configures a Microsoft Entra ID user.
 
     .DESCRIPTION
-        Reads the client's config (UPN pattern, default licence, default
-        groups), creates the Entra ID user with an Australian usage location,
-        assigns the licence, adds the default groups, and finishes with a
-        ready-to-paste ticket note and a temp password to hand over securely.
-
-        Supports -WhatIf so you can sanity-check the UPN and groups before
-        touching the tenant — worth doing on a client you haven't onboarded
-        for before.
+        Reads the UPN pattern, default licence and default groups from the
+        client configuration. Returns a ticket note, an action summary and a
+        temporary password when the user is created. Use -WhatIf to review the
+        planned UPN, licence and group assignments.
 
     .EXAMPLE
-        Connect-MgGraph -Scopes 'User.ReadWrite.All','Group.ReadWrite.All','Directory.ReadWrite.All','Organization.Read.All'
+        Connect-MgGraph -Scopes 'User.ReadWrite.All','GroupMember.ReadWrite.All','Organization.Read.All'
         New-SdClientUser -ClientCode ACME -FirstName Sarah -LastName McMillan `
             -JobTitle 'Conveyancer' -ConfigPath ./config/clients.json -WhatIf
     #>
@@ -42,26 +38,54 @@
 
     $client = Get-SdClientConfig -Path $ConfigPath -ClientCode $ClientCode
     Assert-SdGraphConnection -RequiredScopes @(
-        'User.ReadWrite.All', 'Group.ReadWrite.All', 'Organization.Read.All'
+        'User.ReadWrite.All', 'GroupMember.ReadWrite.All', 'Organization.Read.All'
     ) | Out-Null
 
-    # Build the UPN from the client's pattern, e.g. "{first}.{last}".
-    # Lower-case and stripped of spaces/apostrophes (O'Brien, van der Berg).
+    # Build the UPN from the configured pattern and remove characters that are
+    # not accepted by this module's local-part convention.
     $localPart = $client.upnPattern.
         Replace('{first}', $FirstName).
         Replace('{last}', $LastName).
-        ToLower() -replace "[\s']", ''
+        ToLower() -replace "[^a-z0-9._-]", ''
+    if ([string]::IsNullOrWhiteSpace($localPart)) {
+        throw 'The configured UPN pattern and supplied name produced an empty local part.'
+    }
     $upn = '{0}@{1}' -f $localPart, $client.domain
     $displayName = '{0} {1}' -f $FirstName, $LastName
+    $skuToAssign = if ($LicenceSku) { $LicenceSku } else { $client.defaultLicenceSku }
 
-    # UPN clash check — duplicate names happen more than you'd think.
-    $existing = Get-MgUser -Filter "userPrincipalName eq '$upn'" -ErrorAction SilentlyContinue
+    $escapedUpn = $upn.Replace("'", "''")
+    $existing = Get-MgUser -Filter "userPrincipalName eq '$escapedUpn'" -ErrorAction SilentlyContinue
     if ($existing) {
         throw "A user with UPN '$upn' already exists in this tenant. Agree a variation with the client (e.g. middle initial) and re-run with an adjusted -FirstName/-LastName."
     }
 
+    if ($WhatIfPreference) {
+        $plannedActions = [System.Collections.Generic.List[string]]::new()
+        $plannedActions.Add("Create Entra ID user $upn")
+        if ($skuToAssign) { $plannedActions.Add("Assign licence $skuToAssign") }
+        foreach ($groupName in @($client.defaultGroups)) {
+            if ($groupName) { $plannedActions.Add("Add to group '$groupName'") }
+        }
+
+        Write-Information 'WhatIf run complete. No tenant changes were made.' -InformationAction Continue
+        return [pscustomobject]@{
+            WhatIf            = $true
+            UserPrincipalName = $upn
+            DisplayName       = $displayName
+            LicenceSku        = $skuToAssign
+            DefaultGroups     = @($client.defaultGroups)
+            PlannedActions    = $plannedActions.ToArray()
+            Actions           = @()
+            FailedActions     = @()
+            TempPassword      = $null
+            TicketNote        = $null
+        }
+    }
+
     $tempPassword = New-SdTempPassword
     $actions = [System.Collections.Generic.List[string]]::new()
+    $failures = [System.Collections.Generic.List[string]]::new()
 
     # --- Create the user --------------------------------------------------
     if ($PSCmdlet.ShouldProcess($upn, 'Create Entra ID user')) {
@@ -86,76 +110,90 @@
         $actions.Add("Created Entra ID user $upn (must change password at first sign-in)")
     }
     else {
-        Write-Information "WhatIf: would create user '$displayName' as $upn" -InformationAction Continue
-        $newUser = $null
+        Write-Information "User creation was cancelled for $upn." -InformationAction Continue
+        return
     }
 
     # --- Assign the licence -------------------------------------------------
-    $skuToAssign = if ($LicenceSku) { $LicenceSku } else { $client.defaultLicenceSku }
     if ($skuToAssign -and $newUser) {
-        $sku = Get-MgSubscribedSku -All | Where-Object SkuPartNumber -eq $skuToAssign
-        if (-not $sku) {
-            Write-Warning "Licence SKU '$skuToAssign' not found in this tenant — assign manually and note it in the ticket."
-            $actions.Add("LICENCE NOT ASSIGNED: SKU '$skuToAssign' not found in tenant")
+        try {
+            $matchingSkus = @(Get-MgSubscribedSku -All -ErrorAction Stop | Where-Object SkuPartNumber -eq $skuToAssign)
+            if ($matchingSkus.Count -eq 0) {
+                throw "SKU '$skuToAssign' was not found in the tenant"
+            }
+            if ($matchingSkus.Count -gt 1) {
+                throw "More than one SKU matched '$skuToAssign'"
+            }
+
+            $sku = $matchingSkus[0]
+            if (($sku.PrepaidUnits.Enabled - $sku.ConsumedUnits) -lt 1) {
+                throw "No $skuToAssign seats are available"
+            }
+
+            if ($PSCmdlet.ShouldProcess($upn, "Assign licence $skuToAssign")) {
+                Set-MgUserLicense -UserId $newUser.Id `
+                    -AddLicenses @(@{ SkuId = $sku.SkuId }) -RemoveLicenses @() -ErrorAction Stop | Out-Null
+                $actions.Add("Assigned licence $skuToAssign")
+            }
         }
-        elseif (($sku.PrepaidUnits.Enabled - $sku.ConsumedUnits) -lt 1) {
-            # Classic MSP moment: the client is out of licences. Flag it
-            # rather than fail the whole onboarding.
-            Write-Warning "No spare '$skuToAssign' licences (all $($sku.PrepaidUnits.Enabled) in use). Raise a licence purchase with the client's account manager."
-            $actions.Add("LICENCE NOT ASSIGNED: no spare $skuToAssign seats — purchase required")
-        }
-        elseif ($PSCmdlet.ShouldProcess($upn, "Assign licence $skuToAssign")) {
-            Set-MgUserLicense -UserId $newUser.Id `
-                -AddLicenses @(@{ SkuId = $sku.SkuId }) -RemoveLicenses @() -ErrorAction Stop | Out-Null
-            $actions.Add("Assigned licence $skuToAssign")
+        catch {
+            $message = "LICENCE NOT ASSIGNED: $($_.Exception.Message)"
+            Write-Warning $message
+            $failures.Add($message)
         }
     }
 
     # --- Add default groups --------------------------------------------------
     foreach ($groupName in @($client.defaultGroups)) {
         if (-not $groupName) { continue }
-        $group = Get-MgGroup -Filter "displayName eq '$groupName'" -ErrorAction SilentlyContinue
-        if (-not $group) {
-            Write-Warning "Default group '$groupName' not found in tenant — add manually if it's been renamed."
-            $actions.Add("GROUP NOT ADDED: '$groupName' not found")
-            continue
-        }
-        if ($newUser -and $PSCmdlet.ShouldProcess($upn, "Add to group '$groupName'")) {
-            try {
+        try {
+            $escapedGroupName = $groupName.Replace("'", "''")
+            $matchingGroups = @(Get-MgGroup -Filter "displayName eq '$escapedGroupName'" -ErrorAction Stop)
+            if ($matchingGroups.Count -eq 0) {
+                throw "Group '$groupName' was not found"
+            }
+            if ($matchingGroups.Count -gt 1) {
+                throw "Group name '$groupName' is not unique"
+            }
+
+            $group = $matchingGroups[0]
+            if ($newUser -and $PSCmdlet.ShouldProcess($upn, "Add to group '$groupName'")) {
                 New-MgGroupMember -GroupId $group.Id -DirectoryObjectId $newUser.Id -ErrorAction Stop
                 $actions.Add("Added to group '$groupName'")
             }
-            catch {
-                # Dynamic groups reject manual adds — that's fine, membership
-                # will sort itself out from the user's attributes.
-                Write-Warning "Could not add to '$groupName': $($_.Exception.Message)"
-                $actions.Add("GROUP NOT ADDED: '$groupName' — $($_.Exception.Message)")
-            }
+        }
+        catch {
+            $message = "GROUP NOT ADDED: '$groupName' - $($_.Exception.Message)"
+            Write-Warning $message
+            $failures.Add($message)
         }
     }
 
-    if (-not $newUser) {
-        Write-Information 'WhatIf run complete. Nothing was changed in the tenant.' -InformationAction Continue
-        return
+    $status = if ($failures.Count -gt 0) { 'In progress' } else { 'Waiting on client' }
+    $resolution = if ($failures.Count -gt 0) {
+        'Account created. Licence or group follow-up remains; see troubleshooting steps.'
+    }
+    else {
+        "Account created and configured from the $($client.code) client settings."
     }
 
-    $note = New-SdTicketNote -Summary "New starter onboarding — $displayName" `
+    $note = New-SdTicketNote -Summary "New starter onboarding - $displayName" `
         -Client $client.name `
         -Issue "Onboard new starter $displayName ($JobTitle) for $($client.name)." `
-        -Steps $actions.ToArray() `
-        -Resolution "Account created and configured per the $($client.code) onboarding standard." `
+        -Steps (@($actions.ToArray()) + @($failures.ToArray())) `
+        -Resolution $resolution `
         -NextSteps 'Client to have the user enrol MFA at first sign-in (aka.ms/mfasetup)',
                    'Confirm mailbox has provisioned (can take a few minutes after licensing)',
                    'Book follow-up to confirm first-day sign-in went smoothly' `
-        -Status 'Waiting on client'
+        -Status $status
 
     [pscustomobject]@{
         UserPrincipalName = $upn
         DisplayName       = $displayName
-        # Handed over out-of-band (phone or password manager) — never email
-        # the password together with the username.
         TempPassword      = $tempPassword
         Actions           = $actions.ToArray()
+        FailedActions     = $failures.ToArray()
+        Status            = $status
         TicketNote        = $note
     }
 }
