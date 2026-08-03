@@ -229,7 +229,7 @@ Describe 'Format-SdTriageNote (private)' {
             }
 
             $note = Format-SdTriageNote -Triage $fake
-            $note | Should -Match '=== WORKSTATION TRIAGE — ACME-LT-2345XY ==='
+            $note | Should -Match '=== WORKSTATION TRIAGE - ACME-LT-2345XY ==='
             $note | Should -Match '<< LOW SPACE'
             $note | Should -Match '14x  disk \[System\]'
             $note | Should -Match 'Reception-MFP'
