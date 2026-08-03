@@ -1,11 +1,11 @@
 ﻿function Invoke-SdPcRunUp {
     <#
     .SYNOPSIS
-        Workshop PC run-up: applies the SOE baseline and produces a QA report.
+        Applies a workstation baseline and produces a QA report.
 
     .DESCRIPTION
-        The bench work, standardised. Reads the SOE baseline (JSON) and the
-        client config, then works through the run-up checklist:
+        Reads the baseline JSON and client configuration, then runs the
+        configured workstation preparation and QA steps:
 
           - Rename the machine to the client's naming convention
           - Set the time zone (defaults to Adelaide)
@@ -34,7 +34,7 @@
         [Parameter(Mandatory)]
         [string]$ClientCode,
 
-        # LT = laptop, DT = desktop — feeds the naming convention.
+        # LT = laptop, DT = desktop - feeds the naming convention.
         [Parameter(Mandatory)]
         [ValidateSet('LT', 'DT', 'WS')]
         [string]$DeviceType,
@@ -53,7 +53,15 @@
     if (-not (Test-Path $BaselinePath)) {
         throw "SOE baseline not found at '$BaselinePath'. Copy config/runup-baseline.sample.json and adjust."
     }
-    $baseline = Get-Content -Path $BaselinePath -Raw | ConvertFrom-Json
+    try {
+        $baseline = Get-Content -Path $BaselinePath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        throw "SOE baseline at '$BaselinePath' could not be loaded: $($_.Exception.Message)"
+    }
+    if (-not $baseline.soeVersion -or -not $baseline.checks) {
+        throw "SOE baseline at '$BaselinePath' must define 'soeVersion' and 'checks'."
+    }
     $client   = Get-SdClientConfig -Path $ConfigPath -ClientCode $ClientCode
 
     $steps = [System.Collections.Generic.List[pscustomobject]]::new()
@@ -128,7 +136,7 @@
         }
     }
     else {
-        & $addStep 'Power plan' 'Manual' "Unknown plan '$planName' in baseline — set manually"
+        & $addStep 'Power plan' 'Manual' "Unknown plan '$planName' in baseline - set manually"
     }
 
     # --- Standard apps via winget ------------------------------------------------
@@ -136,7 +144,7 @@
         & $addStep 'Standard apps' 'Skipped' 'Skipped by -SkipApps'
     }
     elseif (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        & $addStep 'Standard apps' 'Manual' 'winget not available — install the App Installer from the Microsoft Store first'
+        & $addStep 'Standard apps' 'Manual' 'winget not available - install the App Installer from the Microsoft Store first'
     }
     else {
         foreach ($appId in @($baseline.wingetApps)) {
@@ -146,11 +154,11 @@
                     & $addStep "App: $appId" 'Done' 'Installed'
                 }
                 elseif ($LASTEXITCODE -eq -1978335189) {
-                    # winget's "no applicable upgrade" — already installed.
+                    # winget's "no applicable upgrade" - already installed.
                     & $addStep "App: $appId" 'Skipped' 'Already installed'
                 }
                 else {
-                    & $addStep "App: $appId" 'Failed' "winget exit code $LASTEXITCODE — install manually"
+                    & $addStep "App: $appId" 'Failed' "winget exit code $LASTEXITCODE - install manually"
                 }
             }
             else {
@@ -169,14 +177,14 @@
         if ($PSCmdlet.ShouldProcess($appx, 'Remove Appx package')) {
             try {
                 $package | Remove-AppxPackage -ErrorAction Stop
-                & $addStep "Debloat: $appx" 'Done' 'Removed'
+                & $addStep "Debloat: $appx" 'Done' 'Removed for the account running this command'
             }
             catch {
                 & $addStep "Debloat: $appx" 'Failed' $_.Exception.Message
             }
         }
         else {
-            & $addStep "Debloat: $appx" 'WouldChange' 'Would remove the Appx package'
+            & $addStep "Debloat: $appx" 'WouldChange' 'Would remove the Appx package for the account running this command'
         }
     }
 
@@ -186,38 +194,53 @@
         try {
             Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' `
                 -Name 'HideFileExt' -Value 0 -ErrorAction Stop
-            & $addStep 'Show file extensions' 'Done' 'Hidden extensions are how users double-click invoice.pdf.exe'
+                & $addStep 'Show file extensions' 'Done' 'Enabled for the account running this command'
         }
         catch {
             & $addStep 'Show file extensions' 'Failed' $_.Exception.Message
         }
     }
     elseif ($baseline.windowsSettings.showFileExtensions) {
-        & $addStep 'Show file extensions' 'WouldChange' 'Would show file extensions for the current user'
+            & $addStep 'Show file extensions' 'WouldChange' 'Would enable file extensions for the account running this command'
     }
 
     # --- QA checks (read-only) ----------------------------------------------------------
+    $requireTpm = if ($null -ne $baseline.checks.requireTpm) { [bool]$baseline.checks.requireTpm } else { $true }
     try {
         $tpm = Get-Tpm -ErrorAction Stop
         if ($tpm.TpmPresent -and $tpm.TpmReady) {
             & $addStep 'QA: TPM' 'Done' 'TPM present and ready'
         }
+        elseif ($requireTpm) {
+            & $addStep 'QA: TPM' 'Failed' 'TPM is required by the baseline but is missing or not ready'
+        }
         else {
-            & $addStep 'QA: TPM' 'Manual' 'TPM missing or not ready — check firmware settings before enabling BitLocker'
+            & $addStep 'QA: TPM' 'Skipped' 'TPM is not required by this baseline'
         }
     }
     catch {
-        & $addStep 'QA: TPM' 'Manual' "Could not query TPM: $($_.Exception.Message)"
+        $status = if ($requireTpm) { 'Failed' } else { 'Skipped' }
+        & $addStep 'QA: TPM' $status "Could not query TPM: $($_.Exception.Message)"
     }
 
+    $requireBitLocker = if ($null -ne $baseline.checks.requireBitLocker) { [bool]$baseline.checks.requireBitLocker } else { $true }
     if (Get-Command Get-BitLockerVolume -ErrorAction SilentlyContinue) {
         $systemDrive = Get-BitLockerVolume -MountPoint $env:SystemDrive -ErrorAction SilentlyContinue
         if ($systemDrive -and $systemDrive.ProtectionStatus -eq 'On') {
-            & $addStep 'QA: BitLocker' 'Done' "Protection on ($($systemDrive.EncryptionPercentage)% encrypted) — confirm the recovery key is escrowed"
+            & $addStep 'QA: BitLocker' 'Done' "Protection on ($($systemDrive.EncryptionPercentage)% encrypted); confirm the recovery key is escrowed"
+        }
+        elseif ($requireBitLocker) {
+            & $addStep 'QA: BitLocker' 'Failed' 'BitLocker is required by the baseline but protection is not enabled'
         }
         else {
-            & $addStep 'QA: BitLocker' 'Manual' 'Not enabled — enable via Intune policy or manually, and escrow the recovery key'
+            & $addStep 'QA: BitLocker' 'Skipped' 'BitLocker is not required by this baseline'
         }
+    }
+    elseif ($requireBitLocker) {
+        & $addStep 'QA: BitLocker' 'Failed' 'Get-BitLockerVolume is unavailable on this machine'
+    }
+    else {
+        & $addStep 'QA: BitLocker' 'Skipped' 'BitLocker is not required by this baseline'
     }
 
     $disk = Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DeviceID='$env:SystemDrive'"
@@ -227,13 +250,13 @@
         & $addStep 'QA: Disk space' 'Done' "$freeGb GB free on $env:SystemDrive"
     }
     else {
-        & $addStep 'QA: Disk space' 'Manual' "$freeGb GB free is under the $minFree GB baseline — check the drive spec"
+        & $addStep 'QA: Disk space' 'Failed' "$freeGb GB free is under the $minFree GB baseline"
     }
 
     # Windows Update is deliberately last and deliberately manual-or-module:
     # PSWindowsUpdate isn't on a fresh image by default.
     if (Get-Command Get-WindowsUpdate -ErrorAction SilentlyContinue) {
-        & $addStep 'Windows updates' 'Manual' 'PSWindowsUpdate available — run Install-WindowsUpdate -AcceptAll -AutoReboot to finish'
+        & $addStep 'Windows updates' 'Manual' 'PSWindowsUpdate available - run Install-WindowsUpdate -AcceptAll -AutoReboot to finish'
     }
     else {
         & $addStep 'Windows updates' 'Manual' 'Run Windows Update until no updates remain (usually 2-3 passes on a fresh image)'
@@ -280,7 +303,7 @@
     [void]$sb.AppendLine("**Outstanding before shipping:** $manualCount manual step(s), $failedCount failed step(s), $wouldChangeCount planned change(s).")
 
     if ($PSCmdlet.ShouldProcess($reportFile, 'Write run-up report')) {
-        Set-Content -Path $reportFile -Value $sb.ToString() -Encoding UTF8
+        Set-Content -Path $reportFile -Value $sb.ToString() -Encoding UTF8 -ErrorAction Stop
         Write-Information "Run-up report saved to $reportFile" -InformationAction Continue
     }
 

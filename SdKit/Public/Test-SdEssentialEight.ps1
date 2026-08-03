@@ -1,20 +1,12 @@
 ﻿function Test-SdEssentialEight {
     <#
     .SYNOPSIS
-        Quick workstation sanity check against the ACSC Essential Eight.
+        Checks local workstation signals related to the ACSC Essential Eight.
 
     .DESCRIPTION
-        A Level 1/2-friendly sweep of the local signals for each of the
-        eight strategies. This is deliberately NOT a formal Essential Eight
-        maturity assessment — several strategies (MFA, backups, privileged
-        access) can only be judged at the tenant/organisation level. Where
-        that's the case the check is marked ManualCheck with a pointer to
-        what to look at, so the desk knows what to raise rather than
-        pretending a registry read settles it.
-
-        Useful on SMB client machines to spot the common gaps: macros wide
-        open, no application control, users running as local admins, stale
-        patching.
+        Checks local indicators for the eight mitigation strategies. This is
+        not a formal maturity assessment. Controls that require tenant,
+        policy or service evidence are returned as `ManualCheck`.
 
     .EXAMPLE
         Test-SdEssentialEight | Format-Table Strategy, Status, Finding
@@ -23,6 +15,7 @@
         Test-SdEssentialEight -AsTicketNote
     #>
     [CmdletBinding()]
+    [OutputType([pscustomobject[]], [string])]
     param (
         # Emit a paste-ready ticket note instead of the check objects.
         [switch]$AsTicketNote
@@ -53,8 +46,8 @@
     }
     $wdacActive = Test-Path -Path "$env:SystemRoot\System32\CodeIntegrity\CiPolicies\Active" -PathType Container
     if (($appLockerPolicy -and $appLockerPolicy.RuleCollections.Count -gt 0) -or $wdacActive) {
-        & $addCheck 'Application control' 'Pass' 'AppLocker or WDAC policy is in effect' `
-            'Confirm the policy actually blocks (audit-only mode is common).'
+        & $addCheck 'Application control' 'ManualCheck' 'AppLocker or WDAC configuration was detected' `
+            'Confirm enforcement mode, rule coverage and approved exceptions in the policy source.'
     }
     else {
         & $addCheck 'Application control' 'Attention' 'No AppLocker/WDAC policy found' `
@@ -66,9 +59,9 @@
         # Count upgradable packages; skip the header/progress noise.
         $upgradeLines = @(winget upgrade --disable-interactivity 2>$null |
             Where-Object { $_ -match '^\S+.*\d+\.\S*\s+\d+\.\S*' })
-        if ($upgradeLines.Count -le 3) {
-            & $addCheck 'Patch applications' 'Pass' "$($upgradeLines.Count) app(s) with pending updates" `
-                'Third-party apps look reasonably current.'
+        if ($upgradeLines.Count -eq 0) {
+            & $addCheck 'Patch applications' 'Pass' 'No pending winget upgrades were detected' `
+                'Confirm centrally managed applications in the RMM or patching report.'
         }
         else {
             & $addCheck 'Patch applications' 'Attention' "$($upgradeLines.Count) app(s) with pending updates" `
@@ -83,16 +76,20 @@
     # --- 3. Configure Office macro settings ------------------------------------------
     # Policy value 4 = disabled without notification; the ACSC baseline is
     # to block macros from the internet at minimum.
-    $macroBlocked = $false
+    $macroBlockedApps = [System.Collections.Generic.List[string]]::new()
     foreach ($app in 'word', 'excel', 'powerpoint') {
         $policy = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Office\16.0\$app\security" -ErrorAction SilentlyContinue
         if ($policy -and ($policy.blockcontentexecutionfrominternet -eq 1 -or $policy.vbawarnings -eq 4)) {
-            $macroBlocked = $true
+            $macroBlockedApps.Add($app)
         }
     }
-    if ($macroBlocked) {
-        & $addCheck 'Office macro settings' 'Pass' 'Macro-blocking policy detected for Office apps' `
-            'Confirm the policy covers all Office apps and comes from Intune/GPO, not a local tweak.'
+    if ($macroBlockedApps.Count -eq 3) {
+        & $addCheck 'Office macro settings' 'Pass' 'Macro-blocking policy detected for Word, Excel and PowerPoint' `
+            'Confirm the settings are centrally managed and review approved exceptions.'
+    }
+    elseif ($macroBlockedApps.Count -gt 0) {
+        & $addCheck 'Office macro settings' 'Attention' ("Policy detected for: {0}" -f ($macroBlockedApps -join ', ')) `
+            'Review the missing Office application policies before treating this control as covered.'
     }
     else {
         & $addCheck 'Office macro settings' 'Attention' 'No macro-blocking policy found in HKCU Office policies' `
@@ -106,7 +103,7 @@
                      ($smartScreenLocal -and $smartScreenLocal.SmartScreenEnabled -in @('RequireAdmin', 'Warn', 'Prompt'))
     if ($smartScreenOn) {
         & $addCheck 'User application hardening' 'Pass' 'SmartScreen is enabled' `
-            'One signal only — browser hardening and PDF handling still need a policy-level look.'
+            'One signal only - browser hardening and PDF handling still need a policy-level look.'
     }
     else {
         & $addCheck 'User application hardening' 'Attention' 'SmartScreen appears disabled' `
@@ -114,27 +111,18 @@
     }
 
     # --- 5. Restrict administrative privileges -------------------------------------------
-    $identity  = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-    $principal = [System.Security.Principal.WindowsPrincipal]::new($identity)
-    $isAdmin   = $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
-    $adminCount = $null
-    if (Get-Command Get-LocalGroupMember -ErrorAction SilentlyContinue) {
-        # Broken SIDs from departed domain accounts make this throw — hence
-        # the soft error handling.
-        $adminCount = @(Get-LocalGroupMember -Group 'Administrators' -ErrorAction SilentlyContinue).Count
-    }
-    if ($isAdmin) {
-        & $addCheck 'Restrict admin privileges' 'Attention' "Current user IS a local administrator (local admins: $adminCount)" `
+    $adminState = Get-SdLocalAdminState
+    if ($adminState.IsAdmin) {
+        & $addCheck 'Restrict admin privileges' 'Attention' "Current user IS a local administrator (local admins: $($adminState.AdminCount))" `
             'Daily-driver accounts should not be local admins. Recommend a separate admin account or an EPM tool.'
     }
     else {
-        & $addCheck 'Restrict admin privileges' 'Pass' "Current user is a standard user (local admins: $adminCount)" `
-            'Good — confirm the admin accounts that do exist are known and documented.'
+        & $addCheck 'Restrict admin privileges' 'Pass' "Current user is a standard user (local admins: $($adminState.AdminCount))" `
+            'Confirm the remaining local administrator accounts are approved and documented.'
     }
 
     # --- 6. Patch operating systems --------------------------------------------------------
-    $lastHotfix = Get-HotFix -ErrorAction SilentlyContinue |
-        Where-Object InstalledOn | Sort-Object InstalledOn -Descending | Select-Object -First 1
+    $lastHotfix = Get-SdLastHotfix
     if ($lastHotfix) {
         $patchAge = ((Get-Date) - $lastHotfix.InstalledOn).Days
         if ($patchAge -le 35) {
@@ -162,11 +150,11 @@
     })
     if ($backupAgents.Count -gt 0) {
         & $addCheck 'Regular backups' 'ManualCheck' ("Backup agent(s) found: {0}" -f (($backupAgents.DisplayName | Select-Object -First 3) -join ', ')) `
-            'An agent being present is not a backup — verify the last successful job and the most recent test restore.'
+            'Verify the last successful backup and the most recent test restore.'
     }
     else {
         & $addCheck 'Regular backups' 'ManualCheck' 'No known backup agent service found on this machine' `
-            'Fine for a workstation if data lives in OneDrive/SharePoint — confirm that is actually the case for this client.'
+            'Confirm where workstation data is stored and how it is recovered.'
     }
 
     if (-not $AsTicketNote) {
@@ -176,9 +164,9 @@
     # --- Ticket note ---------------------------------------------------------------------------
     $attention = @($checks | Where-Object Status -eq 'Attention')
     $sb = [System.Text.StringBuilder]::new()
-    [void]$sb.AppendLine(('=== ESSENTIAL EIGHT QUICK CHECK — {0} ===' -f $env:COMPUTERNAME))
+    [void]$sb.AppendLine(('=== ESSENTIAL EIGHT QUICK CHECK - {0} ===' -f $env:COMPUTERNAME))
     [void]$sb.AppendLine(('Captured: {0}' -f (Get-Date -Format $script:SdDateFormat)))
-    [void]$sb.AppendLine('Scope: workstation-level signals only — NOT a formal E8 maturity assessment.')
+    [void]$sb.AppendLine('Scope: workstation-level signals only - NOT a formal E8 maturity assessment.')
     [void]$sb.AppendLine()
     foreach ($check in $checks) {
         [void]$sb.AppendLine(('  [{0}] {1}' -f $check.Status.ToUpper(), $check.Strategy))
@@ -190,7 +178,7 @@
         [void]$sb.AppendLine(('SUMMARY: {0} item(s) need attention: {1}' -f $attention.Count, (($attention.Strategy) -join '; ')))
     }
     else {
-        [void]$sb.AppendLine('SUMMARY: No local red flags — complete the manual checks to finish the picture.')
+        [void]$sb.AppendLine('SUMMARY: No local attention items. Complete the manual checks separately.')
     }
     return $sb.ToString()
 }

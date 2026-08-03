@@ -5,7 +5,7 @@
 
     .DESCRIPTION
         Kept separate from the collection logic so the formatting can be
-        unit-tested on any platform with a fabricated snapshot object —
+        unit-tested on any platform with a fabricated snapshot object -
         no live Windows box required.
     #>
     [CmdletBinding()]
@@ -16,7 +16,7 @@
     )
 
     $sb = [System.Text.StringBuilder]::new()
-    [void]$sb.AppendLine(('=== WORKSTATION TRIAGE — {0} ===' -f $Triage.ComputerName))
+    [void]$sb.AppendLine(('=== WORKSTATION TRIAGE - {0} ===' -f $Triage.ComputerName))
     [void]$sb.AppendLine(('Captured:      {0}' -f $Triage.Captured))
     if ($Triage.Client)  { [void]$sb.AppendLine(('Client:        {0}' -f $Triage.Client)) }
     if ($Triage.Contact) { [void]$sb.AppendLine(('Contact:       {0}' -f $Triage.Contact)) }
@@ -34,7 +34,7 @@
 
     [void]$sb.AppendLine('DISKS')
     foreach ($disk in @($Triage.Disks)) {
-        # Flag anything under 15% free — the usual culprit behind "my
+        # Flag anything under 15% free - the usual culprit behind "my
         # computer is running slow" tickets.
         $flag = if ($disk.PercentFree -lt 15) { '  << LOW SPACE' } else { '' }
         [void]$sb.AppendLine(('  {0}  {1} GB free of {2} GB ({3}%){4}' -f `
@@ -53,7 +53,7 @@
     if ($Triage.Printers) {
         [void]$sb.AppendLine('PRINTERS')
         foreach ($printer in @($Triage.Printers)) {
-            [void]$sb.AppendLine(('  {0} — {1}' -f $printer.Name, $printer.Status))
+            [void]$sb.AppendLine(('  {0} - {1}' -f $printer.Name, $printer.Status))
         }
         [void]$sb.AppendLine()
     }
@@ -61,7 +61,7 @@
     if ($Triage.Network) {
         [void]$sb.AppendLine('NETWORK QUICK CHECK')
         foreach ($check in @($Triage.Network)) {
-            [void]$sb.AppendLine(('  [{0}] {1} — {2}' -f $check.Result.ToUpper(), $check.Check, $check.Detail))
+            [void]$sb.AppendLine(('  [{0}] {1} - {2}' -f $check.Result.ToUpper(), $check.Check, $check.Detail))
         }
         [void]$sb.AppendLine()
     }

@@ -1,19 +1,19 @@
-=== ESSENTIAL EIGHT QUICK CHECK — BLU-DT-77TR21 ===
+=== ESSENTIAL EIGHT QUICK CHECK - BLU-DT-77TR21 ===
 Captured: 01/07/2026 11:03
-Scope: workstation-level signals only — NOT a formal E8 maturity assessment.
+Scope: workstation-level signals only - NOT a formal E8 maturity assessment.
 
-  [ATTENTION] Application control
-      No AppLocker/WDAC policy found
-      -> Users can run any executable they download. Raise application control (even audit mode) with the client.
+  [MANUALCHECK] Application control
+      AppLocker or WDAC configuration was detected
+      -> Confirm enforcement mode, rule coverage and approved exceptions in the policy source.
   [ATTENTION] Patch applications
       9 app(s) with pending updates
       -> Run winget upgrade --all or check the RMM patching policy for this client.
   [PASS] Office macro settings
-      Macro-blocking policy detected for Office apps
-      -> Confirm the policy covers all Office apps and comes from Intune/GPO, not a local tweak.
+      Macro-blocking policy detected for Word, Excel and PowerPoint
+      -> Confirm the settings are centrally managed and review approved exceptions.
   [PASS] User application hardening
       SmartScreen is enabled
-      -> One signal only — browser hardening and PDF handling still need a policy-level look.
+      -> One signal only - browser hardening and PDF handling still need a policy-level look.
   [ATTENTION] Restrict admin privileges
       Current user IS a local administrator (local admins: 4)
       -> Daily-driver accounts should not be local admins. Recommend a separate admin account or an EPM tool.
@@ -25,6 +25,6 @@ Scope: workstation-level signals only — NOT a formal E8 maturity assessment.
       -> Check Conditional Access policies in Entra ID, and per-user methods with Get-SdUserSnapshot.
   [MANUALCHECK] Regular backups
       No known backup agent service found on this machine
-      -> Fine for a workstation if data lives in OneDrive/SharePoint — confirm that is actually the case for this client.
+      -> Confirm where workstation data is stored and how it is recovered.
 
-SUMMARY: 3 item(s) need attention: Application control; Patch applications; Restrict admin privileges
+SUMMARY: 2 item(s) need attention: Patch applications; Restrict admin privileges

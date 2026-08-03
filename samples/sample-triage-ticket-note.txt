@@ -1,4 +1,4 @@
-=== WORKSTATION TRIAGE — ACME-LT-2345XY ===
+=== WORKSTATION TRIAGE - ACME-LT-2345XY ===
 Captured:      01/07/2026 09:15
 Client:        Acme Conveyancing Pty Ltd
 Contact:       Sarah M (reception)
@@ -20,14 +20,17 @@ RECENT EVENT LOG ERRORS (last 24h)
   3x  Application Error [Application]
 
 PRINTERS
-  Reception-MFP — Normal
-  Settlements-Laser — Offline
+  Reception-MFP - Normal
+  Settlements-Laser - Offline
 
 NETWORK QUICK CHECK
-  [PASS] Network adapter up — Wi-Fi
-  [PASS] IP address (DHCP) — IP 192.168.10.57, gateway 192.168.10.1
-  [PASS] External DNS (www.microsoft.com) — 23.62.230.91
-  [PASS] HTTPS egress (443) — www.microsoft.com:443 reachable
+  [PASS] Network adapter up - Wi-Fi
+  [PASS] IP address (DHCP) - IP 192.168.10.57, gateway 192.168.10.1
+  [PASS] Default gateway ping - 192.168.10.1
+  [PASS] External DNS (www.microsoft.com) - 23.62.230.91
+  [PASS] HTTPS egress (443) - www.microsoft.com:443 reachable
+  [PASS] M365 endpoint (login.microsoftonline.com) - Reachable on 443
+  [PASS] M365 endpoint (outlook.office365.com) - Reachable on 443
+  [SKIP] VPN connected - No VPN connections active
 
 --- End of automated triage. Add troubleshooting notes below. ---
-
