@@ -1,11 +1,10 @@
 ﻿function Reset-SdAdAccount {
     <#
     .SYNOPSIS
-        The bread-and-butter AD ticket: unlock and/or reset an on-prem account.
+        Unlocks and/or resets an on-premises Active Directory account.
 
     .DESCRIPTION
-        Handles the single most common Level 1 call — "I'm locked out" /
-        "I've forgotten my password" — the proper way:
+        Checks the account state before applying an unlock or password reset:
 
           - Finds the account and reports whether it's actually locked,
             disabled or expired (users say "locked out" for all three)
@@ -63,13 +62,14 @@
         if ($user.AccountExpirationDate) { $findings.Add("Account expires: $($user.AccountExpirationDate.ToString($script:SdDateFormat))") }
         $findings.Add("Password last set: $(if ($user.PasswordLastSet) { $user.PasswordLastSet.ToString($script:SdDateFormat) } else { 'never' })")
 
-        # A disabled account looks like a lockout to the user but isn't one —
+        # A disabled account looks like a lockout to the user but isn't one -
         # flag it rather than silently "unlocking" nothing.
         if (-not $user.Enabled) {
-            $findings.Add('NOTE: account is DISABLED — unlocking will not let them sign in. Confirm with the client before enabling.')
+            $findings.Add('NOTE: account is DISABLED - unlocking will not let them sign in. Confirm with the client before enabling.')
         }
 
         # --- Where did it lock out? -----------------------------------------
+        $pdc = $null
         if ($user.LockedOut -and -not $SkipLockoutSource) {
             try {
                 $pdc = (Get-ADDomain -ErrorAction Stop).PDCEmulator
@@ -86,7 +86,7 @@
                 }
             }
             catch {
-                # Not fatal — the unlock still works, we just can't say why.
+                # Not fatal - the unlock still works, we just can't say why.
                 $pdcLabel = if ($pdc) { $pdc } else { 'the PDC emulator' }
                 $findings.Add("Lockout source lookup unavailable (needs Security log access on PDC $pdcLabel): $($_.Exception.Message)")
             }
@@ -100,7 +100,7 @@
             }
         }
         elseif ($Unlock) {
-            $actions.Add('Unlock requested but account was not locked — no change made')
+            $actions.Add('Unlock requested but account was not locked - no change made')
         }
 
         # --- Password reset --------------------------------------------------
@@ -124,13 +124,13 @@
             return
         }
 
-        $note = New-SdTicketNote -Summary "AD account support — $($user.DisplayName)" `
+        $note = New-SdTicketNote -Summary "AD account support - $($user.DisplayName)" `
             -Client $Client `
             -Issue "Account assistance for $($user.SamAccountName) ($($user.DisplayName))." `
             -Steps ($findings + $actions).ToArray() `
-            -Resolution $(if ($actions.Count -gt 0) { ($actions -join '; ') } else { 'Investigated only — see steps.' }) `
+            -Resolution $(if ($actions.Count -gt 0) { ($actions -join '; ') } else { 'Investigated only - see steps.' }) `
             -NextSteps $(if ($tempPassword) {
-                    @('Hand the temp password to the user out-of-band (phone/password manager) — NOT by email',
+                    @('Hand the temp password to the user out-of-band (phone/password manager), not by email',
                       'Have them clear saved passwords on the device that caused the lockout')
                 } else {
                     @('If it locks again, chase the lockout source device for a stale saved credential')
