@@ -8,37 +8,32 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: ${{ matrix.name }}
+  powershell7:
+    name: PowerShell 7 on ${{ matrix.platform }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: PowerShell 7 on Ubuntu
+          - platform: Ubuntu
             os: ubuntu-latest
-            shell: pwsh
-          - name: PowerShell 7 on Windows
+          - platform: Windows
             os: windows-latest
-            shell: pwsh
-          - name: Windows PowerShell 5.1
-            os: windows-latest
-            shell: powershell
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
 
       - name: Install test modules
-        shell: ${{ matrix.shell }}
+        shell: pwsh
         run: |
           Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
           Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
           Install-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Force -Scope CurrentUser
 
       - name: Run Pester
-        shell: ${{ matrix.shell }}
+        shell: pwsh
         run: |
           $result = Invoke-Pester -Path ./tests/SdKit.Tests.ps1 -Output Detailed -PassThru
           if ($result.FailedCount -gt 0) {
@@ -46,7 +41,40 @@ jobs:
           }
 
       - name: Run ScriptAnalyzer checks
-        shell: ${{ matrix.shell }}
+        shell: pwsh
+        run: |
+          $findings = @(Invoke-ScriptAnalyzer -Path ./SdKit -Recurse -Severity Warning,Error)
+          if ($findings.Count -gt 0) {
+            $findings | Format-Table -AutoSize | Out-String | Write-Output
+            throw "PSScriptAnalyzer reported $($findings.Count) warning or error finding(s)."
+          }
+
+  windows-powershell:
+    name: Windows PowerShell 5.1
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install test modules
+        shell: powershell
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
+          Install-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Force -Scope CurrentUser
+
+      - name: Run Pester
+        shell: powershell
+        run: |
+          $result = Invoke-Pester -Path ./tests/SdKit.Tests.ps1 -Output Detailed -PassThru
+          if ($result.FailedCount -gt 0) {
+            throw "Pester reported $($result.FailedCount) failed test(s)."
+          }
+
+      - name: Run ScriptAnalyzer checks
+        shell: powershell
         run: |
           $findings = @(Invoke-ScriptAnalyzer -Path ./SdKit -Recurse -Severity Warning,Error)
           if ($findings.Count -gt 0) {
