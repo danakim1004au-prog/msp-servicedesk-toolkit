@@ -1,17 +1,14 @@
 ﻿function New-SdTicketNote {
     <#
     .SYNOPSIS
-        Builds a standardised, PSA-ready ticket note.
+        Formats a service desk ticket note.
 
     .DESCRIPTION
-        Every ticket gets the same clean structure — issue, impact, steps
-        taken, cause, resolution, next steps — so the next tech (or the
-        client, or a senior engineer picking up an escalation) can read it
-        cold and know exactly where things stand.
+        Formats issue, impact, troubleshooting, cause, resolution and next-step
+        fields as plain text. Optional escalation fields add the receiving
+        queue and checks already ruled out.
 
-        With -Escalation, the note switches to a handover format that spells
-        out what's been tried and what's already been ruled out, so the
-        senior engineer doesn't repeat an hour of L1 troubleshooting.
+        Use `-Escalation` to set the status and handover heading.
 
     .EXAMPLE
         New-SdTicketNote -Summary 'Outlook prompting for password' `
@@ -30,13 +27,14 @@
             -Escalation -EscalateTo 'L3 - Marcus' `
             -Issue 'ACME-HV01 blue-screened twice; clients losing RDS sessions.' `
             -Steps 'Pulled minidumps', 'Checked storage controller firmware' `
-            -RuledOut 'Not Windows Update related — last patch 3 weeks ago and stable since' `
+            -RuledOut 'Not Windows Update related - last patch 3 weeks ago and stable since' `
             -NextSteps 'Dump analysis needed; suspect NIC driver'
     #>
     [CmdletBinding()]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'This function returns formatted text and does not change system state.')]
     [OutputType([string])]
     param (
-        # One-line summary — mirrors the ticket title in the PSA.
+        # One-line summary - mirrors the ticket title in the PSA.
         [Parameter(Mandatory)]
         [string]$Summary,
 
@@ -49,7 +47,7 @@
         [Parameter(Mandatory)]
         [string]$Issue,
 
-        # Who/what is affected and how badly — drives ticket priority.
+        # Who/what is affected and how badly - drives ticket priority.
         [string]$Impact,
 
         # Troubleshooting steps in the order you took them, one per entry.
@@ -65,7 +63,7 @@
         [ValidateRange(0, 480)]
         [int]$TimeSpentMinutes,
 
-        # Escalation handover mode — forces status to Escalated and adds
+        # Escalation handover mode - forces status to Escalated and adds
         # the "ruled out" section that saves the next tech re-doing work.
         [switch]$Escalation,
         [string]$EscalateTo,
@@ -78,7 +76,7 @@
 
     $sb = [System.Text.StringBuilder]::new()
     $header = if ($Escalation) { 'ESCALATION HANDOVER' } else { 'TICKET NOTE' }
-    [void]$sb.AppendLine(('=== {0} — {1} ===' -f $header, $Summary))
+    [void]$sb.AppendLine(('=== {0} - {1} ===' -f $header, $Summary))
     [void]$sb.AppendLine(('Date:        {0}' -f (Get-Date -Format $script:SdDateFormat)))
     if ($Client)  { [void]$sb.AppendLine(('Client:      {0}' -f $Client)) }
     if ($Contact) { [void]$sb.AppendLine(('Contact:     {0}' -f $Contact)) }

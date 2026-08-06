@@ -1,21 +1,19 @@
 ﻿function New-SdComputerName {
     <#
     .SYNOPSIS
-        Builds a compliant computer name from a client's naming pattern.
+        Builds a computer name from a configured pattern.
 
     .DESCRIPTION
-        Every client has their own naming convention, and getting it wrong
-        during a run-up means a rename-and-reboot later. This takes the
-        pattern from the client config (e.g. "{code}-{type}-{serial}"),
-        substitutes the tokens, strips illegal characters and enforces the
-        15-character NetBIOS limit — trimming the serial from the left so
-        the distinctive tail end of the serial is kept.
+        Replaces the `code`, `type` and `serial` tokens, removes unsupported
+        characters and enforces the 15-character NetBIOS limit. When trimming
+        is required, the end of the serial number is retained.
 
     .EXAMPLE
         New-SdComputerName -Pattern '{code}-{type}-{serial}' -ClientCode 'ACME' -DeviceType LT -Serial '5CG12345XY'
         # ACME-LT-2345XY (trimmed to fit 15 characters)
     #>
     [CmdletBinding()]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'This function returns a value and does not change system state.')]
     [OutputType([string])]
     param (
         # Naming pattern with {code}, {type} and {serial} tokens.
@@ -25,7 +23,7 @@
         [Parameter(Mandatory)]
         [string]$ClientCode,
 
-        # LT = laptop, DT = desktop, WS = workstation/CAD — whatever the
+        # LT = laptop, DT = desktop, WS = workstation/CAD - whatever the
         # client convention uses.
         [Parameter(Mandatory)]
         [string]$DeviceType,
@@ -60,7 +58,7 @@
     $name = $name -replace '[^A-Z0-9\-]', ''
 
     if ($name.Length -gt 15) {
-        # Over the NetBIOS limit — shorten the serial portion, keeping its
+        # Over the NetBIOS limit - shorten the serial portion, keeping its
         # tail because that's usually the unique part.
         $overrun = $name.Length - 15
         if ($cleanSerial.Length -gt $overrun) {
@@ -72,11 +70,11 @@
                 ToUpper()
             $name = $name -replace '[^A-Z0-9\-]', ''
         }
-        # If it's still too long the pattern itself is the problem —
+        # If it's still too long the pattern itself is the problem -
         # hard-truncate and let the tech know.
         if ($name.Length -gt 15) {
             $name = $name.Substring(0, 15)
-            Write-Warning "Pattern produced a name over 15 characters even with a trimmed serial — hard-truncated to '$name'. Check the client's naming convention."
+            Write-Warning "Pattern produced a name over 15 characters even with a trimmed serial - hard-truncated to '$name'. Check the client's naming convention."
         }
     }
 

@@ -4,38 +4,52 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
-    name: Pester and ScriptAnalyzer
+    name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+          - name: PowerShell 7 on Ubuntu
+            os: ubuntu-latest
+            shell: pwsh
+          - name: PowerShell 7 on Windows
+            os: windows-latest
+            shell: pwsh
+          - name: Windows PowerShell 5.1
+            os: windows-latest
+            shell: powershell
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install test modules
-        shell: pwsh
+        shell: ${{ matrix.shell }}
         run: |
           Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-          Install-Module Pester -MinimumVersion 5.0.0 -Force -Scope CurrentUser
-          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
+          Install-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Force -Scope CurrentUser
 
       - name: Run Pester
-        shell: pwsh
+        shell: ${{ matrix.shell }}
         run: |
           $result = Invoke-Pester -Path ./tests/SdKit.Tests.ps1 -Output Detailed -PassThru
           if ($result.FailedCount -gt 0) {
             throw "Pester reported $($result.FailedCount) failed test(s)."
           }
 
-      - name: Run ScriptAnalyzer error checks
-        shell: pwsh
+      - name: Run ScriptAnalyzer checks
+        shell: ${{ matrix.shell }}
         run: |
-          $errors = @(Invoke-ScriptAnalyzer -Path ./SdKit -Recurse -Severity Error)
-          if ($errors.Count -gt 0) {
-            $errors | Format-Table -AutoSize | Out-String | Write-Output
-            throw "PSScriptAnalyzer reported $($errors.Count) error(s)."
+          $findings = @(Invoke-ScriptAnalyzer -Path ./SdKit -Recurse -Severity Warning,Error)
+          if ($findings.Count -gt 0) {
+            $findings | Format-Table -AutoSize | Out-String | Write-Output
+            throw "PSScriptAnalyzer reported $($findings.Count) warning or error finding(s)."
           }
