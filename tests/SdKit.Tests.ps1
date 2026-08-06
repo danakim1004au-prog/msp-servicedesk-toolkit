@@ -1,5 +1,5 @@
 # =====================================================================
-#  SdKit — Pester 5 tests
+#  SdKit - Pester 5 tests
 #  Focused on the pure logic that can run anywhere (macOS/Linux CI or a
 #  Windows bench machine): note formatting, naming conventions, config
 #  validation and the password generator. The Windows-only collectors
@@ -12,6 +12,46 @@ BeforeAll {
     $modulePath = Join-Path $PSScriptRoot '..' 'SdKit' 'SdKit.psd1'
     Import-Module $modulePath -Force
     $script:SamplesConfig = Join-Path $PSScriptRoot '..' 'config' 'clients.sample.json'
+    $script:SamplesRoot = Join-Path $PSScriptRoot '..' 'samples'
+
+    # Define test-only command shims when the host platform does not provide
+    # the Windows cmdlets. Pester replaces these shims with mocks below.
+    if (-not (Get-Command Get-CimInstance -ErrorAction SilentlyContinue)) {
+        function global:Get-CimInstance { param ($ClassName, $Filter) }
+    }
+    if (-not (Get-Command Get-HotFix -ErrorAction SilentlyContinue)) {
+        function global:Get-HotFix { param () }
+    }
+    if (-not (Get-Command Get-WinEvent -ErrorAction SilentlyContinue)) {
+        function global:Get-WinEvent { param ($FilterHashtable, $ErrorAction) }
+    }
+    if (-not (Get-Command Get-AppxPackage -ErrorAction SilentlyContinue)) {
+        function global:Get-AppxPackage { param ($Name, $ErrorAction) }
+    }
+    if (-not (Get-Command Get-Tpm -ErrorAction SilentlyContinue)) {
+        function global:Get-Tpm { param ($ErrorAction) }
+    }
+    if (-not (Get-Command Get-Service -ErrorAction SilentlyContinue)) {
+        function global:Get-Service { param ($ErrorAction) }
+    }
+    if (-not (Get-Command Get-MgUser -ErrorAction SilentlyContinue)) {
+        function global:Get-MgUser { param ($UserId, $Filter, $Property, $ErrorAction) }
+    }
+    if (-not (Get-Command New-MgUser -ErrorAction SilentlyContinue)) {
+        function global:New-MgUser { param ($BodyParameter, $ErrorAction) }
+    }
+    if (-not (Get-Command Get-MgSubscribedSku -ErrorAction SilentlyContinue)) {
+        function global:Get-MgSubscribedSku { param ($All, $ErrorAction) }
+    }
+    if (-not (Get-Command Set-MgUserLicense -ErrorAction SilentlyContinue)) {
+        function global:Set-MgUserLicense { param ($UserId, $AddLicenses, $RemoveLicenses, $ErrorAction) }
+    }
+    if (-not (Get-Command Get-MgGroup -ErrorAction SilentlyContinue)) {
+        function global:Get-MgGroup { param ($Filter, $ErrorAction) }
+    }
+    if (-not (Get-Command New-MgGroupMember -ErrorAction SilentlyContinue)) {
+        function global:New-MgGroupMember { param ($GroupId, $DirectoryObjectId, $ErrorAction) }
+    }
 }
 
 Describe 'Module manifest' {
@@ -38,6 +78,32 @@ Describe 'Module manifest' {
     }
 }
 
+Describe 'Sample output' {
+    It 'does not show a time entry that Reset-SdAdAccount does not supply' {
+        $sample = Get-Content (Join-Path $script:SamplesRoot 'sample-ad-ticket-note.txt') -Raw
+        $sample | Should -Not -Match 'Time spent:'
+    }
+
+    It 'includes every network row produced by the sample triage run' {
+        $sample = Get-Content (Join-Path $script:SamplesRoot 'sample-triage-ticket-note.txt') -Raw
+        $sample | Should -Match 'Default gateway ping'
+        $sample | Should -Match 'login\.microsoftonline\.com'
+        $sample | Should -Match 'outlook\.office365\.com'
+        $sample | Should -Match 'VPN connected'
+    }
+
+    It 'uses the current PC run-up report heading and summary fields' {
+        $sample = Get-Content (Join-Path $script:SamplesRoot 'sample-runup-report.md') -Raw
+        $sample | Should -Match '^# PC Run-Up Report - '
+        $sample | Should -Match 'planned change\(s\)'
+    }
+
+    It 'uses manual review for detected application control configuration' {
+        $sample = Get-Content (Join-Path $script:SamplesRoot 'sample-e8-quickcheck.txt') -Raw
+        $sample | Should -Match '\[MANUALCHECK\] Application control'
+    }
+}
+
 Describe 'New-SdTicketNote' {
     It 'produces the standard sections in order' {
         $note = New-SdTicketNote -Summary 'Printer offline' -Client 'Acme' -Contact 'Sarah' `
@@ -48,7 +114,7 @@ Describe 'New-SdTicketNote' {
             -Resolution 'Queue cleared, test page printed.' `
             -Status Resolved -TimeSpentMinutes 15
 
-        $note | Should -Match '=== TICKET NOTE — Printer offline ==='
+        $note | Should -Match '=== TICKET NOTE . Printer offline ==='
         $note | Should -Match 'ISSUE'
         $note | Should -Match 'IMPACT'
         $note | Should -Match '1\. Power-cycled printer'
@@ -64,9 +130,9 @@ Describe 'New-SdTicketNote' {
         $note = New-SdTicketNote -Summary 'Server BSOD' -Escalation -EscalateTo 'L3 - Marcus' `
             -Issue 'Hyper-V host blue-screened twice.' `
             -Steps 'Collected minidumps' `
-            -RuledOut 'Not patch-related — stable for 3 weeks post-update'
+            -RuledOut 'Not patch-related; stable for 3 weeks post-update'
 
-        $note | Should -Match '=== ESCALATION HANDOVER — Server BSOD ==='
+        $note | Should -Match '=== ESCALATION HANDOVER . Server BSOD ==='
         $note | Should -Match 'Status:      Escalated'
         $note | Should -Match 'Escalated to: L3 - Marcus'
         $note | Should -Match 'RULED OUT'
@@ -176,6 +242,70 @@ Describe 'Get-SdClientConfig' {
     }
 }
 
+Describe 'New-SdClientUser' {
+    It 'returns a useful plan for WhatIf' {
+        InModuleScope SdKit {
+            Mock Get-SdClientConfig {
+                [pscustomobject]@{
+                    code = 'TST'
+                    name = 'Test Client'
+                    domain = 'test.example.com'
+                    upnPattern = '{first}.{last}'
+                    defaultLicenceSku = 'TEST_SKU'
+                    defaultGroups = @('All Staff')
+                }
+            }
+            Mock Assert-SdGraphConnection { $null }
+            Mock Get-MgUser { $null }
+
+            $plan = New-SdClientUser -ClientCode TST -FirstName Alex -LastName Smith `
+                -ConfigPath './unused.json' -WhatIf
+
+            $plan.WhatIf | Should -BeTrue
+            $plan.UserPrincipalName | Should -Be 'alex.smith@test.example.com'
+            $plan.PlannedActions.Count | Should -Be 3
+            $plan.TempPassword | Should -BeNullOrEmpty
+        }
+    }
+
+    It 'records a partial failure after the account is created' {
+        InModuleScope SdKit {
+            Mock Get-SdClientConfig {
+                [pscustomobject]@{
+                    code = 'TST'
+                    name = 'Test Client'
+                    domain = 'test.example.com'
+                    upnPattern = '{first}.{last}'
+                    defaultLicenceSku = 'TEST_SKU'
+                    defaultGroups = @('All Staff')
+                }
+            }
+            Mock Assert-SdGraphConnection { $null }
+            Mock Get-MgUser { $null }
+            Mock New-MgUser { [pscustomobject]@{ Id = 'user-1' } }
+            Mock Get-MgSubscribedSku {
+                [pscustomobject]@{
+                    SkuPartNumber = 'TEST_SKU'
+                    SkuId = 'sku-1'
+                    PrepaidUnits = [pscustomobject]@{ Enabled = 10 }
+                    ConsumedUnits = 2
+                }
+            }
+            Mock Set-MgUserLicense { throw 'licence service unavailable' }
+            Mock Get-MgGroup { [pscustomobject]@{ Id = 'group-1'; DisplayName = 'All Staff' } }
+            Mock New-MgGroupMember { $null }
+
+            $result = New-SdClientUser -ClientCode TST -FirstName Alex -LastName Smith `
+                -ConfigPath './unused.json' -Confirm:$false -WarningAction SilentlyContinue
+
+            $result.Status | Should -Be 'In progress'
+            $result.FailedActions.Count | Should -Be 1
+            $result.TicketNote | Should -Match 'LICENCE NOT ASSIGNED'
+            $result.Actions | Should -Contain "Added to group 'All Staff'"
+        }
+    }
+}
+
 Describe 'New-SdTempPassword (private)' {
     It 'generates passwords with words, digits and a symbol' {
         InModuleScope SdKit {
@@ -247,18 +377,168 @@ Describe 'Reset-SdAdAccount' {
 
 Describe 'Test-SdNetworkStack' {
     It 'returns structured check objects with plain-English fields' {
-        # DNS + TCP layers work cross-platform; Windows-only layers report Skip.
-        $results = Test-SdNetworkStack
-        @($results).Count | Should -BeGreaterThan 3
-        foreach ($check in $results) {
-            $check.Result | Should -BeIn @('Pass', 'Fail', 'Skip')
-            $check.PlainEnglish | Should -Not -BeNullOrEmpty
+        InModuleScope SdKit {
+            Mock Resolve-SdHostAddress { @('203.0.113.10') }
+            Mock Test-SdTcpPort { $true }
+
+            $results = Test-SdNetworkStack
+            @($results).Count | Should -BeGreaterThan 3
+            foreach ($check in $results) {
+                $check.Result | Should -BeIn @('Pass', 'Fail', 'Skip')
+                $check.PlainEnglish | Should -Not -BeNullOrEmpty
+            }
+
+            Should -Invoke Resolve-SdHostAddress -Times 1
+            Should -Invoke Test-SdTcpPort -Times 3
         }
     }
 
     It 'produces a ticket note with a summary line' {
-        $note = Test-SdNetworkStack -AsTicketNote
-        $note | Should -Match '=== NETWORK STACK CHECK'
-        $note | Should -Match 'SUMMARY:'
+        InModuleScope SdKit {
+            Mock Resolve-SdHostAddress { @('203.0.113.10') }
+            Mock Test-SdTcpPort { $true }
+
+            $note = Test-SdNetworkStack -AsTicketNote
+            $note | Should -Match '=== NETWORK STACK CHECK'
+            $note | Should -Match 'SUMMARY:'
+        }
+    }
+
+    It 'reports failed TCP probes without using the external network' {
+        InModuleScope SdKit {
+            Mock Resolve-SdHostAddress { @('203.0.113.10') }
+            Mock Test-SdTcpPort { $false }
+
+            $results = Test-SdNetworkStack
+            @($results | Where-Object Result -eq 'Fail').Count | Should -Be 3
+        }
+    }
+}
+
+Describe 'Invoke-SdTriage' {
+    It 'collects a workstation snapshot from mocked Windows data' {
+        InModuleScope SdKit {
+            $originalPlatform = $script:SdIsWindows
+            $originalComputerName = $env:COMPUTERNAME
+            try {
+                $script:SdIsWindows = $true
+                $env:COMPUTERNAME = 'TEST-LT-001'
+
+                Mock Get-CimInstance {
+                    param ($ClassName, $Filter)
+                    switch ($ClassName) {
+                        'Win32_OperatingSystem' {
+                            [pscustomobject]@{
+                                LastBootUpTime = (Get-Date).AddDays(-2)
+                                Caption = 'Windows 11 Pro'
+                                BuildNumber = '26100'
+                            }
+                        }
+                        'Win32_ComputerSystem' {
+                            [pscustomobject]@{
+                                Manufacturer = 'Contoso'
+                                Model = 'Model 1'
+                                TotalPhysicalMemory = 16GB
+                            }
+                        }
+                        'Win32_BIOS' { [pscustomobject]@{ SerialNumber = 'SERIAL001' } }
+                        'Win32_LogicalDisk' {
+                            [pscustomobject]@{ DeviceID = 'C:'; Size = 500GB; FreeSpace = 250GB }
+                        }
+                    }
+                }
+                Mock Test-Path { $false } -ParameterFilter { $Path -like 'HKLM:*' }
+                Mock Get-ItemProperty { $null }
+                Mock Get-HotFix { [pscustomobject]@{ HotFixID = 'KB5000000'; InstalledOn = (Get-Date).AddDays(-5) } }
+                Mock Get-WinEvent { @() }
+
+                $result = Invoke-SdTriage -Client 'Example Client'
+
+                $result.ComputerName | Should -Be 'TEST-LT-001'
+                $result.SerialNumber | Should -Be 'SERIAL001'
+                $result.Disks[0].PercentFree | Should -Be 50
+            }
+            finally {
+                $script:SdIsWindows = $originalPlatform
+                $env:COMPUTERNAME = $originalComputerName
+            }
+        }
+    }
+}
+
+Describe 'Invoke-SdPcRunUp' {
+    It 'uses baseline requirements in a dry-run report' {
+        $baselinePath = Join-Path $PSScriptRoot '..' 'config' 'runup-baseline.sample.json'
+        $configPath = Join-Path $PSScriptRoot '..' 'config' 'clients.sample.json'
+
+        InModuleScope SdKit -Parameters @{
+            TestBaselinePath = $baselinePath
+            TestConfigPath = $configPath
+            TestReportPath = $TestDrive
+        } {
+            param ($TestBaselinePath, $TestConfigPath, $TestReportPath)
+
+            $originalPlatform = $script:SdIsWindows
+            $originalComputerName = $env:COMPUTERNAME
+            $originalSystemDrive = $env:SystemDrive
+            try {
+                $script:SdIsWindows = $true
+                $env:COMPUTERNAME = 'OLD-NAME'
+                $env:SystemDrive = 'C:'
+
+                Mock Get-CimInstance {
+                    param ($ClassName, $Filter)
+                    if ($ClassName -eq 'Win32_BIOS') {
+                        return [pscustomobject]@{ SerialNumber = '5CG12345XY' }
+                    }
+                    if ($ClassName -eq 'Win32_LogicalDisk') {
+                        return [pscustomobject]@{ FreeSpace = 200GB }
+                    }
+                }
+                Mock Get-AppxPackage { $null }
+                Mock Get-Tpm { [pscustomobject]@{ TpmPresent = $false; TpmReady = $false } }
+                Mock Get-Command { $null } -ParameterFilter { $Name -in @('Get-BitLockerVolume', 'Get-WindowsUpdate') }
+
+                $result = Invoke-SdPcRunUp -BaselinePath $TestBaselinePath `
+                    -ConfigPath $TestConfigPath -ClientCode ACME -DeviceType LT `
+                    -ReportPath $TestReportPath -SkipApps -WhatIf
+
+                ($result.Steps | Where-Object Step -eq 'QA: TPM').Status | Should -Be 'Failed'
+                ($result.Steps | Where-Object Step -eq 'QA: BitLocker').Status | Should -Be 'Failed'
+                $result.FailedSteps | Should -BeGreaterThan 1
+            }
+            finally {
+                $script:SdIsWindows = $originalPlatform
+                $env:COMPUTERNAME = $originalComputerName
+                $env:SystemDrive = $originalSystemDrive
+            }
+        }
+    }
+}
+
+Describe 'Test-SdEssentialEight' {
+    It 'returns eight checks from mocked workstation data' {
+        InModuleScope SdKit {
+            $originalPlatform = $script:SdIsWindows
+            try {
+                $script:SdIsWindows = $true
+
+                Mock Get-Command { $null } -ParameterFilter { $Name -in @('Get-AppLockerPolicy', 'winget') }
+                Mock Test-Path { $false } -ParameterFilter { $Path -like '*CodeIntegrity*' }
+                Mock Get-ItemProperty { $null }
+                Mock Get-SdLocalAdminState { [pscustomobject]@{ IsAdmin = $false; AdminCount = 2 } }
+                Mock Get-SdLastHotfix { [pscustomobject]@{ HotFixID = 'KB5000000'; InstalledOn = (Get-Date).AddDays(-5) } }
+                Mock Get-Service { @() }
+
+                $results = Test-SdEssentialEight
+
+                @($results).Count | Should -Be 8
+                ($results | Where-Object Strategy -eq 'Restrict admin privileges').Status | Should -Be 'Pass'
+                ($results | Where-Object Strategy -eq 'Patch operating systems').Status | Should -Be 'Pass'
+            }
+            finally {
+                $script:SdIsWindows = $originalPlatform
+            }
+        }
     }
 }
