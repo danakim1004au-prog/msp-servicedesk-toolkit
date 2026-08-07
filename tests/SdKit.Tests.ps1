@@ -9,10 +9,13 @@
 # =====================================================================
 
 BeforeAll {
-    $modulePath = Join-Path $PSScriptRoot '..' 'SdKit' 'SdKit.psd1'
-    Import-Module $modulePath -Force
-    $script:SamplesConfig = Join-Path $PSScriptRoot '..' 'config' 'clients.sample.json'
-    $script:SamplesRoot = Join-Path $PSScriptRoot '..' 'samples'
+    $script:RepoRoot = Split-Path -Parent $PSScriptRoot
+    $script:ModulePath = Join-Path (Join-Path $script:RepoRoot 'SdKit') 'SdKit.psd1'
+    $script:ConfigRoot = Join-Path $script:RepoRoot 'config'
+    $script:SamplesConfig = Join-Path $script:ConfigRoot 'clients.sample.json'
+    $script:SamplesRoot = Join-Path $script:RepoRoot 'samples'
+
+    Import-Module $script:ModulePath -Force
 
     # Define test-only command shims when the host platform does not provide
     # the Windows cmdlets. Pester replaces these shims with mocks below.
@@ -56,7 +59,7 @@ BeforeAll {
 
 Describe 'Module manifest' {
     It 'is a valid module manifest' {
-        $manifest = Test-ModuleManifest -Path (Join-Path $PSScriptRoot '..' 'SdKit' 'SdKit.psd1') -ErrorAction Stop
+        $manifest = Test-ModuleManifest -Path $script:ModulePath -ErrorAction Stop
         $manifest.Name | Should -Be 'SdKit'
     }
 
@@ -378,39 +381,63 @@ Describe 'Reset-SdAdAccount' {
 Describe 'Test-SdNetworkStack' {
     It 'returns structured check objects with plain-English fields' {
         InModuleScope SdKit {
-            Mock Resolve-SdHostAddress { @('203.0.113.10') }
-            Mock Test-SdTcpPort { $true }
+            $originalPlatform = $script:SdIsWindows
+            try {
+                $script:SdIsWindows = $false
 
-            $results = Test-SdNetworkStack
-            @($results).Count | Should -BeGreaterThan 3
-            foreach ($check in $results) {
-                $check.Result | Should -BeIn @('Pass', 'Fail', 'Skip')
-                $check.PlainEnglish | Should -Not -BeNullOrEmpty
+                Mock Resolve-SdHostAddress { @('203.0.113.10') }
+                Mock Test-SdTcpPort { $true }
+
+                $results = Test-SdNetworkStack
+                @($results).Count | Should -BeGreaterThan 3
+                foreach ($check in $results) {
+                    $check.Result | Should -BeIn @('Pass', 'Fail', 'Skip')
+                    $check.PlainEnglish | Should -Not -BeNullOrEmpty
+                }
+
+                Should -Invoke Resolve-SdHostAddress -Times 1
+                Should -Invoke Test-SdTcpPort -Times 3
             }
-
-            Should -Invoke Resolve-SdHostAddress -Times 1
-            Should -Invoke Test-SdTcpPort -Times 3
+            finally {
+                $script:SdIsWindows = $originalPlatform
+            }
         }
     }
 
     It 'produces a ticket note with a summary line' {
         InModuleScope SdKit {
-            Mock Resolve-SdHostAddress { @('203.0.113.10') }
-            Mock Test-SdTcpPort { $true }
+            $originalPlatform = $script:SdIsWindows
+            try {
+                $script:SdIsWindows = $false
 
-            $note = Test-SdNetworkStack -AsTicketNote
-            $note | Should -Match '=== NETWORK STACK CHECK'
-            $note | Should -Match 'SUMMARY:'
+                Mock Resolve-SdHostAddress { @('203.0.113.10') }
+                Mock Test-SdTcpPort { $true }
+
+                $note = Test-SdNetworkStack -AsTicketNote
+                $note | Should -Match '=== NETWORK STACK CHECK'
+                $note | Should -Match 'SUMMARY:'
+            }
+            finally {
+                $script:SdIsWindows = $originalPlatform
+            }
         }
     }
 
     It 'reports failed TCP probes without using the external network' {
         InModuleScope SdKit {
-            Mock Resolve-SdHostAddress { @('203.0.113.10') }
-            Mock Test-SdTcpPort { $false }
+            $originalPlatform = $script:SdIsWindows
+            try {
+                $script:SdIsWindows = $false
 
-            $results = Test-SdNetworkStack
-            @($results | Where-Object Result -eq 'Fail').Count | Should -Be 3
+                Mock Resolve-SdHostAddress { @('203.0.113.10') }
+                Mock Test-SdTcpPort { $false }
+
+                $results = Test-SdNetworkStack
+                @($results | Where-Object Result -eq 'Fail').Count | Should -Be 3
+            }
+            finally {
+                $script:SdIsWindows = $originalPlatform
+            }
         }
     }
 }
@@ -468,8 +495,8 @@ Describe 'Invoke-SdTriage' {
 
 Describe 'Invoke-SdPcRunUp' {
     It 'uses baseline requirements in a dry-run report' {
-        $baselinePath = Join-Path $PSScriptRoot '..' 'config' 'runup-baseline.sample.json'
-        $configPath = Join-Path $PSScriptRoot '..' 'config' 'clients.sample.json'
+        $baselinePath = Join-Path $script:ConfigRoot 'runup-baseline.sample.json'
+        $configPath = $script:SamplesConfig
 
         InModuleScope SdKit -Parameters @{
             TestBaselinePath = $baselinePath
